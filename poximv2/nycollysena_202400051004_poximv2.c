@@ -132,11 +132,11 @@
 		uint32_t registradoresUART[6] = {0};
 
 		//Registradores PLIC
-		uint32_t plic_priority[8] = {0};
-		uint32_t plic_pending = 0;
-		uint32_t plic_enable = 0;
-		uint32_t plic_threshold = 0;
-		uint32_t plic_claim = 0;
+		//uint32_t plic_priority[8] = {0};
+		//uint32_t plic_pending = 0;
+		//uint32_t plic_enable = 0;
+		//uint32_t plic_threshold = 0;
+		//uint32_t plic_claim = 0;
 
 		// inicialização de mtvec pra ebreak 
 		//tirar no projeto final 
@@ -835,13 +835,13 @@ case 0b0000011:
         }
          
 		//implementando plic 
-        else if (endereco == 0x0C001000) { // PLIC_PENDING
-			resultado = plic_pending & 0xFF; // só 1 byte
-		}
-		else if (endereco == 0x0C200004) { // PLIC_CLAIM
-			resultado = 1; // ID da UART, por exemplo
-			plic_claim = 1;
-		}
+       // else if (endereco == 0x0C001000) { // PLIC_PENDING
+		//	resultado = plic_pending & 0xFF; // só 1 byte
+		//}
+		//else if (endereco == 0x0C200004) { // PLIC_CLAIM
+		//	resultado = 1; // ID da UART, por exemplo
+		//	plic_claim = 1;
+		//}
 
 
         // EXCEÇÃO DE ACESSO INVÁLIDO
@@ -1021,25 +1021,25 @@ case 0b0000011:
 			}
 
 			// ACESSO AO PLIC
-			else if (endereco == 0x0C002000) { // PLIC_ENABLE
-				plic_enable = registradores[rs2] & 0xFF;
+			//else if (endereco == 0x0C002000) { // PLIC_ENABLE
+			//	plic_enable = registradores[rs2] & 0xFF;
 
-				fprintf(output, "0x%08x:sb %s,0x%03x(%s) plic_enable=0x%02x\n",
-						pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], plic_enable);
-			}
-			else if (endereco == 0x0C200000) { // PLIC_THRESHOLD
-				plic_threshold = registradores[rs2] & 0xFF;
+			//	fprintf(output, "0x%08x:sb %s,0x%03x(%s) plic_enable=0x%02x\n",
+			//			pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], plic_enable);
+			//}
+			//else if (endereco == 0x0C200000) { // PLIC_THRESHOLD
+			//	plic_threshold = registradores[rs2] & 0xFF;
 
-				fprintf(output, "0x%08x:sb %s,0x%03x(%s) plic_threshold=0x%02x\n",
-						pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], plic_threshold);
-			}
-			else if (endereco == 0x0C200004) { // PLIC_CLAIM (fim da interrupção)
-				plic_pending &= ~(1 << 1); // limpa bit 1 (UART)
-				plic_claim = 0;
+			//	fprintf(output, "0x%08x:sb %s,0x%03x(%s) plic_threshold=0x%02x\n",
+			//			pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], plic_threshold);
+			//}
+			//else if (endereco == 0x0C200004) { // PLIC_CLAIM (fim da interrupção)
+			//	plic_pending &= ~(1 << 1); // limpa bit 1 (UART)
+			//	plic_claim = 0;
 
-				fprintf(output, "0x%08x:sb %s,0x%03x(%s) plic_claim=0 (fim interrupção)\n",
-						pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1]);
-			}
+			//	fprintf(output, "0x%08x:sb %s,0x%03x(%s) plic_claim=0 (fim interrupção)\n",
+			//			pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1]);
+			//}
 
 			// ACESSO INVÁLIDO
 			else if (endereco < offset || endereco >= offset + 32 * 1024) {
