@@ -131,6 +131,13 @@
 		//registradores uart 
 		uint32_t registradoresUART[6] = {0};
 
+		//Registradores PLIC
+		uint32_t plic_priority[8] = {0};
+		uint32_t plic_pending = 0;
+		uint32_t plic_enable = 0;
+		uint32_t plic_threshold = 0;
+		uint32_t plic_claim = 0;
+
 		// inicialização de mtvec pra ebreak 
 		//tirar no projeto final 
 		// registradoresCSRs[2] = 0x80000094;
@@ -826,6 +833,16 @@ case 0b0000011:
                 resultado = registradoresUART[5];
             }
         }
+         
+		//implementando plic 
+        else if (endereco == 0x0C001000) { // PLIC_PENDING
+			resultado = plic_pending & 0xFF; // só 1 byte
+		}
+		else if (endereco == 0x0C200004) { // PLIC_CLAIM
+			resultado = 1; // ID da UART, por exemplo
+			plic_claim = 1;
+		}
+
 
         // EXCEÇÃO DE ACESSO INVÁLIDO
         else if (endereco < offset || endereco >= offset + 32 * 1024) {
@@ -849,7 +866,7 @@ case 0b0000011:
                 endereco,
                 resultado);
 
-        // ESCREVE NO REGISTRADOR DESTINO (exceto se for x0)
+        
         if (rd != 0) {
             registradores[rd] = resultado;
         }
@@ -990,44 +1007,57 @@ case 0b0000011:
 		case 0b0100011:
 			// sb (armazena 1 byte do registrador rs2 na memória no endereço rs1 + offset)
 			if (funct3 == 0b000) {
-				const uint32_t endereco = registradores[rs1] + imm_s;
+			const uint32_t endereco = registradores[rs1] + imm_s;
 
-				// ACESSO À UART (escrita no terminal de saída)
-				if (endereco == 0x10000000) {
-					const uint8_t dado = registradores[rs2] & 0xFF; // Só os 8 bits
-					fputc(dado, qemu_terminal_out);                 // Escreve no terminal (UART)
-					fflush(qemu_terminal_out);                      // Garante que vai para o arquivo agora
-					registradoresUART[0] = dado;                    // Só para manter valor registrado
+			// ACESSO À UART (escrita no terminal de saída)
+			if (endereco == 0x10000000) {
+				const uint8_t dado = registradores[rs2] & 0xFF;
+				fputc(dado, qemu_terminal_out);
+				fflush(qemu_terminal_out);
+				registradoresUART[0] = dado;
 
-					fprintf(output, "0x%08x:sb %s,0x%03x(%s) uart[0]=0x%02x\n",
-							pc,
-							regNomes[rs2],
-							imm_s & 0xFFF,
-							regNomes[rs1],
-							dado);
-				}
-
-				// ACESSO INVÁLIDO
-				else if (endereco < offset || endereco >= offset + 32 * 1024) {
-					prepMstatus(&registradoresCSRs[0]);
-					registrarExcecao(7, pc, endereco, registradoresCSRs, output, &pc);
-					continue;
-				}
-
-				// ACESSO NORMAL À MEMÓRIA
-				else {
-					const uint8_t resultado = registradores[rs2] & 0xFF; // Pega só o byte
-					mem[endereco - offset] = resultado;
-
-					fprintf(output, "0x%08x:sb %s,0x%03x(%s) mem[0x%08x]=0x%02x\n",
-							pc,
-							regNomes[rs2],
-							imm_s & 0xFFF,
-							regNomes[rs1],
-							endereco,
-							resultado);
-				}
+				fprintf(output, "0x%08x:sb %s,0x%03x(%s) uart[0]=0x%02x\n",
+						pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], dado);
 			}
+
+			// ACESSO AO PLIC
+			else if (endereco == 0x0C002000) { // PLIC_ENABLE
+				plic_enable = registradores[rs2] & 0xFF;
+
+				fprintf(output, "0x%08x:sb %s,0x%03x(%s) plic_enable=0x%02x\n",
+						pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], plic_enable);
+			}
+			else if (endereco == 0x0C200000) { // PLIC_THRESHOLD
+				plic_threshold = registradores[rs2] & 0xFF;
+
+				fprintf(output, "0x%08x:sb %s,0x%03x(%s) plic_threshold=0x%02x\n",
+						pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], plic_threshold);
+			}
+			else if (endereco == 0x0C200004) { // PLIC_CLAIM (fim da interrupção)
+				plic_pending &= ~(1 << 1); // limpa bit 1 (UART)
+				plic_claim = 0;
+
+				fprintf(output, "0x%08x:sb %s,0x%03x(%s) plic_claim=0 (fim interrupção)\n",
+						pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1]);
+			}
+
+			// ACESSO INVÁLIDO
+			else if (endereco < offset || endereco >= offset + 32 * 1024) {
+				prepMstatus(&registradoresCSRs[0]);
+				registrarExcecao(7, pc, endereco, registradoresCSRs, output, &pc);
+				continue;
+			}
+
+			// ACESSO NORMAL À MEMÓRIA
+			else {
+				const uint8_t resultado = registradores[rs2] & 0xFF;
+				mem[endereco - offset] = resultado;
+
+				fprintf(output, "0x%08x:sb %s,0x%03x(%s) mem[0x%08x]=0x%02x\n",
+						pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], endereco, resultado);
+			}
+		}
+
 
 
 			// sh ( Armazena 2 bytes da parte menos significativa de rs2 na memória [rs1 + offset])
@@ -1056,9 +1086,6 @@ case 0b0000011:
 						endereco,           //endereço
 						resultado & 0xFFFF);
 
-				// if (rd != 0){
-				// registradores[rd] = resultado;
-				// }
 			}
 
 			// sw ( Armazena 2 bytes da parte menos significativa de rs2 na memória [rs1 + offset])
