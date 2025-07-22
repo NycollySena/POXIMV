@@ -1059,7 +1059,6 @@ case 0b0000011:
 		}
 
 
-
 			// sh ( Armazena 2 bytes da parte menos significativa de rs2 na memória [rs1 + offset])
 			else if (funct3 == 0b001){
 				// Calcula o deslocamento de 12 bits com sinal
