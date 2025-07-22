@@ -109,8 +109,8 @@
 		 FILE *input = fopen(argv[1], "r");	// abre um arquivo de entrada
 		 FILE *output = fopen(argv[2], "w"); // abre/cria em arquivo de saida (os arquivos do argumento do main)
 		
-		 FILE *input_2 = fopen("qemu.terminal.in", "r"); //Abre o arquivo de entrada UART
-		 FILE *output_2 = fopen("qemu.terminal", "w"); //Abre/cria o arquivo de saída UART
+		 FILE *input2 = fopen("qemu.terminal.in", "r"); //Abre o arquivo de entrada UART
+		 FILE *output2 = fopen("qemu.terminal.out", "w"); //Abre/cria o arquivo de saída UART
 		 
 		//FILE *input = fopen("input.hex", "r");
 		//FILE *output = fopen("output.out", "w");
@@ -819,7 +819,7 @@ case 0b0000011:
         if (endereco >= 0x10000000 && endereco <= 0x10000007) {
             if (endereco == 0x10000000) {
                 // UART RHR: lê caractere do terminal UART de entrada
-                int c = fgetc(input_2);
+                int c = fgetc(input2);
                 if (c == EOF) {
                     registradoresUART[0] = 0; // nada disponível, retorna 0
                 } else {
@@ -829,7 +829,7 @@ case 0b0000011:
             } 
             else if (endereco == 0x10000005) {
                 // UART LSR: indica se há dado disponível (bit 0 = 1 se sim)
-                registradoresUART[5] = feof(input_2) ? 0x00 : 0x01;
+                registradoresUART[5] = feof(input2) ? 0x00 : 0x01;
                 resultado = registradoresUART[5];
             }
         }
@@ -1012,8 +1012,8 @@ case 0b0000011:
 			// ACESSO À UART (escrita no terminal de saída)
 			if (endereco == 0x10000000) {
 				const uint8_t dado = registradores[rs2] & 0xFF;
-				fputc(dado, output_2);
-				fflush(output_2);
+				fputc(dado, output2);
+				fflush(output2);
 				registradoresUART[0] = dado;
 
 				fprintf(output, "0x%08x:sb %s,0x%03x(%s) uart[0]=0x%02x\n",
