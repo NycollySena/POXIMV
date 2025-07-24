@@ -809,68 +809,63 @@
 			break;
 
 		// tipo Load Byte
-case 0b0000011:
-    // lb (Carrega um byte da memória ou UART no endereço rs1 + offset, estende para 32 bits e armazena em rd)
-    if (funct3 == 0b000) {
-        const uint32_t endereco = registradores[rs1] + imm_i;
-        uint32_t resultado = 0;
+        case 0b0000011:
+            // lb (Carrega um byte da memória ou UART no endereço rs1 + offset, estende para 32 bits e armazena em rd)
+			if (funct3 == 0b000) {
+				const uint32_t endereco = registradores[rs1] + imm_i;
+				uint32_t resultado = 0;
 
-        // ACESSO À UART
-        if (endereco >= 0x10000000 && endereco <= 0x10000007) {
-            if (endereco == 0x10000000) {
-                // UART RHR: lê caractere do terminal UART de entrada
-                int c = fgetc(input2);
-                if (c == EOF) {
-                    registradoresUART[0] = 0; // nada disponível, retorna 0
-                } else {
-                    registradoresUART[0] = (uint8_t)c;
-                }
-                resultado = (uint32_t)(int32_t)((int8_t)registradoresUART[0]);
-            } 
-            else if (endereco == 0x10000005) {
-                // UART LSR: indica se há dado disponível (bit 0 = 1 se sim)
-                registradoresUART[5] = feof(input2) ? 0x00 : 0x01;
-                resultado = registradoresUART[5];
-            }
-        }
-         
-		//implementando plic 
-       // else if (endereco == 0x0C001000) { // PLIC_PENDING
-		//	resultado = plic_pending & 0xFF; // só 1 byte
-		//}
-		//else if (endereco == 0x0C200004) { // PLIC_CLAIM
-		//	resultado = 1; // ID da UART, por exemplo
-		//	plic_claim = 1;
-		//}
+				// ACESSO À UART
+				if (endereco >= 0x10000000 && endereco <= 0x10000007) {
+					if (endereco == 0x10000000) {
+						// UART RHR: lê caractere do terminal UART de entrada
+						int c = fgetc(input2);
+						if (c == EOF) {
+							registradoresUART[0] = 0; // nada disponível, retorna 0
+						} else {
+							registradoresUART[0] = (uint8_t)c;
+						}
+						resultado = (uint32_t)(int32_t)((int8_t)registradoresUART[0]);
+					} 
+					else if (endereco == 0x10000005) {
+						// UART LSR: indica se há dado disponível (bit 0 = 1 se sim)
+						int c = fgetc(input2);  // tenta ler um caractere
+						if (c == EOF) {
+							registradoresUART[5] = 0x60; // bit 0 = 0 → nada disponível
+						} else {
+							ungetc(c, input2);          // devolve o caractere
+							registradoresUART[5] = 0x61; // bit 0 = 1 → dado disponível
+						}
+						resultado = registradoresUART[5];
+					}
+				}
 
+				// EXCEÇÃO DE ACESSO INVÁLIDO
+				else if (endereco < offset || endereco >= offset + 32 * 1024) {
+					prepMstatus(&registradoresCSRs[0]);
+					registrarExcecao(5, pc, endereco, registradoresCSRs, output, &pc); 
+					continue;
+				}
 
-        // EXCEÇÃO DE ACESSO INVÁLIDO
-        else if (endereco < offset || endereco >= offset + 32 * 1024) {
-            prepMstatus(&registradoresCSRs[0]);
-            registrarExcecao(5, pc, endereco, registradoresCSRs, output, &pc); 
-            continue;
-        }
+				// ACESSO NORMAL À MEMÓRIA RAM
+				else {
+					const int8_t byte = (int8_t)mem[endereco - offset];
+					resultado = (uint32_t)(int32_t)byte;
+				}
 
-        // ACESSO NORMAL À MEMÓRIA RAM
-        else {
-            const int8_t byte = (int8_t)mem[endereco - offset];
-            resultado = (uint32_t)(int32_t)byte;
-        }
+				fprintf(output, "0x%08x:lb %s,0x%03x(%s) %s=mem[0x%08x]=0x%08x\n",
+						pc,
+						regNomes[rd],
+						imm_i & 0xFFF,
+						regNomes[rs1],
+						regNomes[rd],
+						endereco,
+						resultado);
 
-        fprintf(output, "0x%08x:lb %s,0x%03x(%s) %s=mem[0x%08x]=0x%08x\n",
-                pc,
-                regNomes[rd],
-                imm_i & 0xFFF,
-                regNomes[rs1],
-                regNomes[rd],
-                endereco,
-                resultado);
-
-        
-        if (rd != 0) {
-            registradores[rd] = resultado;
-        }
-    }
+				if (rd != 0) {
+					registradores[rd] = resultado;
+				}
+			}
 
 
 			// lh (Carrega um halfword (16 bits) da memória no endereço rs1 + offset (com extensão de sinal)
