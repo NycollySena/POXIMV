@@ -1652,6 +1652,50 @@
 				
 		//Incremento do tempo do CLINT (mtime)
 		clint_mtime++;
+
+		// VERIFICAÇÃO DA INTERRUPÇÃO POR TIMER
+		if ((registradoresCSRs[1] & (1 << 7)) &&       // mie: habilita interrupção de timer
+			(registradoresCSRs[0] & (1 << 3)) &&       // mstatus: interrupções globais habilitadas
+			(clint_mtime >= clint_mtimecmp))           // mtime atingiu mtimecmp
+		{
+			// Prepara os CSRs para a interrupção
+			registradoresCSRs[4] = 0x80000007;         // mcause (bit 31 = 1 indica interrupção, código 7 = timer)
+			registradoresCSRs[3] = pc + 4;             // mepc = próxima instrução
+			registradoresCSRs[5] = 0x00000000;         // mtval = zero em interrupções
+
+			prepMstatus(&registradoresCSRs[0]);
+
+			
+			fprintf(output, ">interrupt:timer                   cause=0x%08x,epc=0x%08x,tval=0x%08x\n",
+					registradoresCSRs[4], registradoresCSRs[3], registradoresCSRs[5]);
+
+			// Redireciona o PC para mtvec
+			pc = registradoresCSRs[2];
+
+			continue;
+			}
+
+			// VERIFICAÇÃO DE INTERRUPÇÃO DE SOFTWARE
+			if ((registradoresCSRs[1] & 0x8) &&      // mie: software interrupt enable (bit 3)
+				(registradoresCSRs[0] & 0x8) &&      // mstatus: global interrupt enable (bit 3)
+				(clint_msip & 0x1))                  // msip: interrupção de software solicitada
+			{
+				registradoresCSRs[4] = 0x80000003;   // mcause: software interrupt
+				registradoresCSRs[3] = pc + 4;       // mepc: próxima instrução
+				registradoresCSRs[5] = 0;            // mtval: valor adicional (0 para interrupções)
+
+				prepMstatus(&registradoresCSRs[0]);  
+
+				// Mensagem de interrupção no formato do professor
+				fprintf(output, ">interrupt:software                cause=0x%08x,epc=0x%08x,tval=0x%08x\n",
+						registradoresCSRs[4], registradoresCSRs[3], registradoresCSRs[5]);
+
+				// Redireciona o PC para mtvec
+				pc = registradoresCSRs[2];          
+				continue;
+			}
+        
+
 	}
 	return 0;
 }
