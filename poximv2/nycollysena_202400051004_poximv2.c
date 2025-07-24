@@ -131,6 +131,12 @@
 		//registradores uart 
 		uint32_t registradoresUART[6] = {0};
 
+		//Registradores clint
+		uint32_t clint_msip = 0;           // interrupção de software (MSIP)
+		uint64_t clint_mtime = 0;          // contador de tempo (MTIME)
+		uint64_t clint_mtimecmp = -1;      // alvo da interrupção (MTIMECMP)
+
+
 		//Registradores PLIC
 		//uint32_t plic_priority[8] = {0};
 		//uint32_t plic_pending = 0;
@@ -840,6 +846,23 @@
 					}
 				}
 
+				// ACESSO AO CLINT
+				else if (endereco == 0x02000000) { // MSIP (Software interrupt pending)
+					resultado = clint_msip & 0x1;
+				}
+				else if (endereco == 0x0200BFF8) { // MTIME (parte baixa dos 64 bits)
+					resultado = (uint32_t)(clint_mtime & 0xFFFFFFFF);
+				}
+				else if (endereco == 0x0200BFFC) { // MTIME (parte alta)
+					resultado = (uint32_t)(clint_mtime >> 32);
+				}
+				else if (endereco == 0x02004000) { // MTIMECMP (parte baixa)
+					resultado = (uint32_t)(clint_mtimecmp & 0xFFFFFFFF);
+				}
+				else if (endereco == 0x02004004) { // MTIMECMP (parte alta)
+					resultado = (uint32_t)(clint_mtimecmp >> 32);
+				}
+
 				// EXCEÇÃO DE ACESSO INVÁLIDO
 				else if (endereco < offset || endereco >= offset + 32 * 1024) {
 					prepMstatus(&registradoresCSRs[0]);
@@ -1002,56 +1025,67 @@
 		case 0b0100011:
 			// sb (armazena 1 byte do registrador rs2 na memória no endereço rs1 + offset)
 			if (funct3 == 0b000) {
-			const uint32_t endereco = registradores[rs1] + imm_s;
+				const uint32_t endereco = registradores[rs1] + imm_s;
 
-			// ACESSO À UART (escrita no terminal de saída)
-			if (endereco == 0x10000000) {
-				const uint8_t dado = registradores[rs2] & 0xFF;
-				fputc(dado, output2);
-				fflush(output2);
-				registradoresUART[0] = dado;
+				// ACESSO À UART (escrita no terminal de saída)
+				if (endereco == 0x10000000) {
+					const uint8_t dado = registradores[rs2] & 0xFF;
+					fputc(dado, output2);
+					fflush(output2);
+					registradoresUART[0] = dado;
 
-				fprintf(output, "0x%08x:sb %s,0x%03x(%s) uart[0]=0x%02x\n",
-						pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], dado);
+					fprintf(output, "0x%08x:sb %s,0x%03x(%s) uart[0]=0x%02x\n",
+							pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], dado);
+				}
+
+				// ACESSO AO CLINT
+				else if (endereco == 0x02000000) { // MSIP (software interrupt pending)
+					clint_msip = registradores[rs2] & 0x1;
+
+					fprintf(output, "0x%08x:sb %s,0x%03x(%s) clint_msip=0x%02x\n",
+							pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], clint_msip);
+				}
+				else if (endereco == 0x0200BFF8) { // MTIME (parte baixa)
+					clint_mtime = (clint_mtime & 0xFFFFFFFF00000000) | (registradores[rs2] & 0xFF);
+
+					fprintf(output, "0x%08x:sb %s,0x%03x(%s) clint_mtime_low+=0x%02x\n",
+							pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], registradores[rs2] & 0xFF);
+				}
+				else if (endereco == 0x0200BFFC) { // MTIME (parte alta)
+					clint_mtime = (clint_mtime & 0x00000000FFFFFFFF) | ((uint64_t)(registradores[rs2] & 0xFF) << 32);
+
+					fprintf(output, "0x%08x:sb %s,0x%03x(%s) clint_mtime_high+=0x%02x\n",
+							pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], registradores[rs2] & 0xFF);
+				}
+				else if (endereco == 0x02004000) { // MTIMECMP (parte baixa)
+					clint_mtimecmp = (clint_mtimecmp & 0xFFFFFFFF00000000) | (registradores[rs2] & 0xFF);
+
+					fprintf(output, "0x%08x:sb %s,0x%03x(%s) clint_mtimecmp_low=0x%02x\n",
+							pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], registradores[rs2] & 0xFF);
+				}
+				else if (endereco == 0x02004004) { // MTIMECMP (parte alta)
+					clint_mtimecmp = (clint_mtimecmp & 0x00000000FFFFFFFF) | ((uint64_t)(registradores[rs2] & 0xFF) << 32);
+
+					fprintf(output, "0x%08x:sb %s,0x%03x(%s) clint_mtimecmp_high=0x%02x\n",
+							pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], registradores[rs2] & 0xFF);
+				}
+
+				// ACESSO INVÁLIDO
+				else if (endereco < offset || endereco >= offset + 32 * 1024) {
+					prepMstatus(&registradoresCSRs[0]);
+					registrarExcecao(7, pc, endereco, registradoresCSRs, output, &pc);
+					continue;
+				}
+
+				// ACESSO NORMAL À MEMÓRIA
+				else {
+					const uint8_t resultado = registradores[rs2] & 0xFF;
+					mem[endereco - offset] = resultado;
+
+					fprintf(output, "0x%08x:sb %s,0x%03x(%s) mem[0x%08x]=0x%02x\n",
+							pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], endereco, resultado);
+				}
 			}
-
-			// ACESSO AO PLIC
-			//else if (endereco == 0x0C002000) { // PLIC_ENABLE
-			//	plic_enable = registradores[rs2] & 0xFF;
-
-			//	fprintf(output, "0x%08x:sb %s,0x%03x(%s) plic_enable=0x%02x\n",
-			//			pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], plic_enable);
-			//}
-			//else if (endereco == 0x0C200000) { // PLIC_THRESHOLD
-			//	plic_threshold = registradores[rs2] & 0xFF;
-
-			//	fprintf(output, "0x%08x:sb %s,0x%03x(%s) plic_threshold=0x%02x\n",
-			//			pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], plic_threshold);
-			//}
-			//else if (endereco == 0x0C200004) { // PLIC_CLAIM (fim da interrupção)
-			//	plic_pending &= ~(1 << 1); // limpa bit 1 (UART)
-			//	plic_claim = 0;
-
-			//	fprintf(output, "0x%08x:sb %s,0x%03x(%s) plic_claim=0 (fim interrupção)\n",
-			//			pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1]);
-			//}
-
-			// ACESSO INVÁLIDO
-			else if (endereco < offset || endereco >= offset + 32 * 1024) {
-				prepMstatus(&registradoresCSRs[0]);
-				registrarExcecao(7, pc, endereco, registradoresCSRs, output, &pc);
-				continue;
-			}
-
-			// ACESSO NORMAL À MEMÓRIA
-			else {
-				const uint8_t resultado = registradores[rs2] & 0xFF;
-				mem[endereco - offset] = resultado;
-
-				fprintf(output, "0x%08x:sb %s,0x%03x(%s) mem[0x%08x]=0x%02x\n",
-						pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], endereco, resultado);
-			}
-		}
 
 
 			// sh ( Armazena 2 bytes da parte menos significativa de rs2 na memória [rs1 + offset])
@@ -1615,6 +1649,9 @@
 			continue; //Isso será tratado pelo handler
 		}
 		pc += 4;	
+				
+		//Incremento do tempo do CLINT (mtime)
+		clint_mtime++;
 	}
 	return 0;
 }
