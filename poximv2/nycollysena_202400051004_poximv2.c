@@ -120,14 +120,14 @@ int main(int argc, char *argv[])
 { // argumento para abrir o projeto no terminal, entrega a entrada e fala a saida
   // "./meuprograma" "entrada.hex"  "saida.out"
 
-	//  FILE *input = fopen(argv[1], "r");	// abre um arquivo de entrada
-	//  FILE *output = fopen(argv[2], "w"); // abre/cria em arquivo de saida (os arquivos do argumento do main)
+	  FILE *input = fopen(argv[1], "r");	// abre um arquivo de entrada
+	  FILE *output = fopen(argv[2], "w"); // abre/cria em arquivo de saida (os arquivos do argumento do main)
 
 	FILE *input2 = fopen("qemu.terminal.in", "r");	 // Abre o arquivo de entrada UART
 	FILE *output2 = fopen("qemu.terminal.out", "w"); // Abre/cria o arquivo de saída UART
 
-	FILE *input = fopen("input.hex", "r");
-	FILE *output = fopen("output.out", "w");
+	//FILE *input = fopen("input.hex", "r");
+	//FILE *output = fopen("output.out", "w");
 
 	// offset é o ponto de partida da memória simulada
 	// const uint32_t offset = 0x80000000; // Vamos fingir que a memória do processador começa no endereço 0x80000000. offset significa deslocamento
