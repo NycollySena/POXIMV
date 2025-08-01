@@ -151,11 +151,11 @@ int main(int argc, char *argv[])
 	uint64_t clint_mtimecmp = -1; // alvo da interrupção (MTIMECMP)
 
 	// Registradores PLIC
-	// uint32_t plic_priority[8] = {0};
-	// uint32_t plic_pending = 0;
-	// uint32_t plic_enable = 0;
+	 uint32_t plic_priority = 0;
+	 uint32_t plic_pending = 0;
+	 uint32_t plic_enable = 0;
 	// uint32_t plic_threshold = 0;
-	// uint32_t plic_claim = 0;
+	 uint32_t plic_claim = 0;
 
 	// inicialização de mtvec pra ebreak
 	// tirar no projeto final
@@ -917,6 +917,9 @@ int main(int argc, char *argv[])
 						{
 							ungetc(c, input2);			 // devolve o caractere
 							registradoresUART[5] = 0x61; // bit 0 = 1 → dado disponível
+
+							// UART aciona interrupção externa via PLIC (fonte 1)
+		                    plic_pending |= (1 << 1);
 						}
 						resultado = registradoresUART[5];
 					}
@@ -1833,7 +1836,6 @@ int main(int argc, char *argv[])
 
 				prepMstatus(&registradoresCSRs[0]);
 
-				// Mensagem de interrupção no formato do professor
 				fprintf(output, ">interrupt:software                cause=0x%08x,epc=0x%08x,tval=0x%08x\n",
 						registradoresCSRs[4], registradoresCSRs[3], registradoresCSRs[5]);
 
@@ -1841,6 +1843,30 @@ int main(int argc, char *argv[])
 				pc = (registradoresCSRs[2] & ~0x3) + 4 * (registradoresCSRs[4] & 0x7FFFFFFF);
 				continue;
 			}
+
+			// VERIFICAÇÃO DE INTERRUPÇÃO EXTERNA (PLIC – UART)
+			if ((registradoresCSRs[1] & (1 << 11)) &&    // mie: interrupção externa habilitada (bit 11)
+				(registradoresCSRs[0] & (1 << 3)) &&     // mstatus: global interrupt enable
+				(plic_enable & (1 << 1)) &&              // PLIC: UART habilitada
+				(plic_pending & (1 << 1)))               // PLIC: UART sinalizou interrupção
+			{
+				registradoresCSRs[4] = 0x8000000B; // mcause: 11 = External Interrupt (bit 31 = 1)
+				registradoresCSRs[3] = pc + 4;     // mepc: próxima instrução
+				registradoresCSRs[5] = 0;          // mtval: 0 para interrupções
+
+				prepMstatus(&registradoresCSRs[0]);
+
+				fprintf(output, ">interrupt:external                cause=0x%08x,epc=0x%08x,tval=0x%08x\n",
+						registradoresCSRs[4], registradoresCSRs[3], registradoresCSRs[5]);
+
+				// Limpa o pending (interrupção foi "reconhecida")
+				plic_pending &= ~(1 << 1);
+				
+				// Redireciona o PC para mtvec como nas outras interrupções
+				pc = (registradoresCSRs[2] & ~0x3) + 4 * (registradoresCSRs[4] & 0x7FFFFFFF);
+				continue;
+			}
+
 		}
 		return 0;
 	}
