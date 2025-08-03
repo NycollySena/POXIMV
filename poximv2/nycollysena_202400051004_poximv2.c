@@ -120,8 +120,8 @@ int main(int argc, char *argv[])
 { // argumento para abrir o projeto no terminal, entrega a entrada e fala a saida
   // "./meuprograma" "entrada.hex"  "saida.out"
 
-	  FILE *input = fopen(argv[1], "r");	// abre um arquivo de entrada
-	  FILE *output = fopen(argv[2], "w"); // abre/cria em arquivo de saida (os arquivos do argumento do main)
+	FILE *input = fopen(argv[1], "r");	// abre um arquivo de entrada
+	FILE *output = fopen(argv[2], "w"); // abre/cria em arquivo de saida (os arquivos do argumento do main)
 
 	FILE *input2 = fopen("qemu.terminal.in", "r");	 // Abre o arquivo de entrada UART
 	FILE *output2 = fopen("qemu.terminal.out", "w"); // Abre/cria o arquivo de saída UART
@@ -154,7 +154,7 @@ int main(int argc, char *argv[])
 	 uint32_t plic_priority = 0;
 	 uint32_t plic_pending = 0;
 	 uint32_t plic_enable = 0;
-	// uint32_t plic_threshold = 0;
+	 uint32_t plic_threshold = 0;
 	 uint32_t plic_claim = 0;
 
 	// inicialização de mtvec pra ebreak
@@ -918,8 +918,9 @@ int main(int argc, char *argv[])
 							ungetc(c, input2);			 // devolve o caractere
 							registradoresUART[5] = 0x61; // bit 0 = 1 → dado disponível
 
-							// UART aciona interrupção externa via PLIC (fonte 1)
+							//Ativa a interrupção no PLIC (fonte 1: UART)
 		                    plic_pending |= (1 << 1);
+
 						}
 						resultado = registradoresUART[5];
 					}
@@ -1019,35 +1020,56 @@ int main(int argc, char *argv[])
 
 			// lw (Carrega uma word (32 bits) da memória no endereço rs1 + offset e armazena em rd)
 			else if (funct3 == 0b010)
+		{
+			const uint32_t endereco = registradores[rs1] + imm_i;
+
+			// Acesso aos registradores do PLIC (endereços mapeados)
+			if (endereco == 0x0C000000) // PRIORITY
 			{
-				const uint32_t endereco = registradores[rs1] + imm_i;
-
-				// Tratamento da exceção 5 — Load Access Fault. Quando a instrução de leitura tenta acessar um endereço inválido na memória
-				if (endereco < offset || endereco >= offset + 32 * 1024)
-				{
-					// preparando mstatus para a excessão
-					prepMstatus(&registradoresCSRs[0]);
-					registrarExcecao(5, pc, endereco, registradoresCSRs, output, &pc);
-					continue;
-				}
-				// Lê quatro bytes (palavra completa)
-				uint32_t resultado = 0;
-				resultado = mem[endereco - offset] | (mem[endereco + 1 - offset] << 8) | (mem[endereco + 2 - offset] << 16) | (mem[endereco + 3 - offset] << 24);
-
+				uint32_t resultado = plic_priority;
 				fprintf(output, "0x%08x:lw %s,0x%03x(%s) %s=mem[0x%08x]=0x%08x\n",
-						pc,			   // Endereço da instrução
-						regNomes[rd],  // Nome do registrador destino
-						imm_i & 0xFFF, // imediato do tipo i
-						regNomes[rs1], // Nome do registrador rs1
-						regNomes[rd],  // Nome do registrador destino
-						endereco,	   // endereço usado para encontrar a memoria
-						resultado);
-
+						pc, regNomes[rd], imm_i & 0xFFF, regNomes[rs1], regNomes[rd], endereco, resultado);
 				if (rd != 0)
-				{
 					registradores[rd] = resultado;
-				}
+				continue;
 			}
+			else if (endereco == 0x0C001000) // PENDING
+			{
+				uint32_t resultado = plic_pending;
+				fprintf(output, "0x%08x:lw %s,0x%03x(%s) %s=mem[0x%08x]=0x%08x\n",
+						pc, regNomes[rd], imm_i & 0xFFF, regNomes[rs1], regNomes[rd], endereco, resultado);
+				if (rd != 0)
+					registradores[rd] = resultado;
+				continue;
+			}
+			else if (endereco == 0x0C002000) // ENABLE
+			{
+				uint32_t resultado = plic_enable;
+				fprintf(output, "0x%08x:lw %s,0x%03x(%s) %s=mem[0x%08x]=0x%08x\n",
+						pc, regNomes[rd], imm_i & 0xFFF, regNomes[rs1], regNomes[rd], endereco, resultado);
+				if (rd != 0)
+					registradores[rd] = resultado;
+				continue;
+			}
+			else if (endereco == 0x0C200000) // THRESHOLD
+			{
+				uint32_t resultado = plic_threshold;
+				fprintf(output, "0x%08x:lw %s,0x%03x(%s) %s=mem[0x%08x]=0x%08x\n",
+						pc, regNomes[rd], imm_i & 0xFFF, regNomes[rs1], regNomes[rd], endereco, resultado);
+				if (rd != 0)
+					registradores[rd] = resultado;
+				continue;
+			}
+			else if (endereco == 0x0C200004) // CLAIM
+			{
+				uint32_t resultado = plic_claim;
+				fprintf(output, "0x%08x:lw %s,0x%03x(%s) %s=mem[0x%08x]=0x%08x\n",
+						pc, regNomes[rd], imm_i & 0xFFF, regNomes[rs1], regNomes[rd], endereco, resultado);
+				if (rd != 0)
+					registradores[rd] = resultado;
+				continue;
+			}
+
 
 			// lbu (Carrega 1 byte da memória no endereço rs1 + offset, faz zero-extend e armazena em rd)
 			else if (funct3 == 0b100)
