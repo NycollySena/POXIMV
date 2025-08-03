@@ -1900,7 +1900,7 @@ int main(int argc, char *argv[])
 				(clint_msip & 0x1))				// msip: interrupção de software solicitada
 			{
 				registradoresCSRs[4] = 0x80000003; // mcause: software interrupt
-				registradoresCSRs[3] = pc + 4;	   // mepc: próxima instrução
+				registradoresCSRs[3] = pc;	   // mepc: instrução atual
 				registradoresCSRs[5] = 0;		   // mtval: valor adicional (0 para interrupções)
 
 				prepMstatus(&registradoresCSRs[0]);
