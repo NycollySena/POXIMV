@@ -1387,13 +1387,14 @@ int main(int argc, char *argv[])
 
 				// const uint32_t campo_imm_b = (imm_b >> 1) & 0xFFF;
 
-				fprintf(output, "0x%08x:blt %s,%s,0x%03x (0x%08x<0x%08x)=u1->pc=0x%08x\n",
+				fprintf(output, "0x%08x:blt %s,%s,0x%03x (0x%08x<0x%08x)=%c1->pc=0x%08x\n",
 						pc,					// Endereço da instrução
 						regNomes[rs1],		// Nome do registrador rs1
 						regNomes[rs2],		// Nome do registrador rs2
 						imm_b & 0xFFF,		// imediato do tipo b
 						registradores[rs1], // valor de rs1
 						registradores[rs2], // valor de rs2
+						condicao ? 'u' : '0',
 						((int32_t)registradores[rs1] < (int32_t)registradores[rs2]) ? pc + imm_b : pc + 4);
 
 				if (condicao)
