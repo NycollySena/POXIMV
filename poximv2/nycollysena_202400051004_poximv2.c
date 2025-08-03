@@ -1020,7 +1020,7 @@ int main(int argc, char *argv[])
 
 			// lw (Carrega uma word (32 bits) da memória no endereço rs1 + offset e armazena em rd)
 			else if (funct3 == 0b010)
-		{
+		    {
 			const uint32_t endereco = registradores[rs1] + imm_i;
 
 			// Acesso aos registradores do PLIC (endereços mapeados)
@@ -1070,6 +1070,27 @@ int main(int argc, char *argv[])
 				continue;
 			}
 
+			// ACESSO NORMAL A RAM
+			if (endereco < offset || endereco + 3 >= offset + 32 * 1024)
+			{
+				prepMstatus(&registradoresCSRs[0]);
+				registrarExcecao(5, pc, endereco, registradoresCSRs, output, &pc);
+				continue;
+			}
+
+			uint32_t resultado = mem[endereco - offset] |
+								(mem[endereco + 1 - offset] << 8) |
+								(mem[endereco + 2 - offset] << 16) |
+								(mem[endereco + 3 - offset] << 24);
+
+			fprintf(output, "0x%08x:lw %s,0x%03x(%s) mem[0x%08x]=0x%08x\n",
+					pc, regNomes[rd], imm_i & 0xFFF, regNomes[rs1], endereco, resultado);
+
+			if (rd != 0)
+				registradores[rd] = resultado;
+
+			} 
+             //fim lw
 
 			// lbu (Carrega 1 byte da memória no endereço rs1 + offset, faz zero-extend e armazena em rd)
 			else if (funct3 == 0b100)
@@ -1146,12 +1167,13 @@ int main(int argc, char *argv[])
 				registrarExcecao(2, pc, instrucao, registradoresCSRs, output, &pc);
 				continue;
 			}
-
+		
 			break;
+			
 
 		// tipo Store byte
-		case 0b0100011:
-		{
+		case 0b0100011:{
+		
 			const uint32_t endereco = registradores[rs1] + imm_s;
 
 			// ACESSO AO CLINT
@@ -1196,7 +1218,8 @@ int main(int argc, char *argv[])
 						pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], dado);
 			}
 			// ACESSO NORMAL À RAM
-			else if (funct3 == 0b000)
+			// sb (Armazena 1 byte da parte menos significativa de rs2 na memória [rs1 + offset])
+			else if (funct3 == 0b000) 
 			{
 				if (endereco < offset || endereco >= offset + 32 * 1024)
 				{
@@ -1282,9 +1305,10 @@ int main(int argc, char *argv[])
 				registrarExcecao(2, pc, instrucao, registradoresCSRs, output, &pc);
 				continue;
 			}
-
+		
+		
 			break;
-		}
+	}
 		// tipo Branch
 		case 0b1100011:
 			// beq (Compara os valores em rs1 e rs2. Se forem iguais, salta para PC + offset)
