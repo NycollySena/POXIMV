@@ -1174,63 +1174,66 @@ int main(int argc, char *argv[])
 		// tipo Store byte
 		case 0b0100011:{
 		
-			const uint32_t endereco = registradores[rs1] + imm_s;
-
-			// ACESSO AO CLINT
-			if (endereco == 0x02000000)
-			{ // MSIP
-				clint_msip = registradores[rs2] & 0x1;
-				fprintf(output, "0x%08x:sb %s,0x%03x(%s) clint_msip=0x%02x\n",
-						pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], clint_msip);
-			}
-			else if (endereco == 0x0200BFF8)
-			{ // MTIME low
-				clint_mtime = (clint_mtime & 0xFFFFFFFF00000000) | (registradores[rs2] & 0xFF);
-				fprintf(output, "0x%08x:sb %s,0x%03x(%s) clint_mtime_low+=0x%02x\n",
-						pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], registradores[rs2] & 0xFF);
-			}
-			else if (endereco == 0x0200BFFC)
-			{ // MTIME high
-				clint_mtime = (clint_mtime & 0x00000000FFFFFFFF) | ((uint64_t)(registradores[rs2] & 0xFF) << 32);
-				fprintf(output, "0x%08x:sb %s,0x%03x(%s) clint_mtime_high+=0x%02x\n",
-						pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], registradores[rs2] & 0xFF);
-			}
-			else if (endereco == 0x02004000)
-			{ // MTIMECMP low
-				clint_mtimecmp = (clint_mtimecmp & 0xFFFFFFFF00000000) | (registradores[rs2] & 0xFF);
-				fprintf(output, "0x%08x:sb %s,0x%03x(%s) clint_mtimecmp_low=0x%02x\n",
-						pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], registradores[rs2] & 0xFF);
-			}
-			else if (endereco == 0x02004004)
-			{ // MTIMECMP high
-				clint_mtimecmp = (clint_mtimecmp & 0x00000000FFFFFFFF) | ((uint64_t)(registradores[rs2] & 0xFF) << 32);
-				fprintf(output, "0x%08x:sb %s,0x%03x(%s) clint_mtimecmp_high=0x%02x\n",
-						pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], registradores[rs2] & 0xFF);
-			}
-			// ACESSO À UART
-			else if (endereco == 0x10000000)
-			{
-				const uint8_t dado = registradores[rs2] & 0xFF;
-				fputc(dado, output2);
-				fflush(output2);
-				registradoresUART[0] = dado;
-				fprintf(output, "0x%08x:sb %s,0x%03x(%s) uart[0]=0x%02x\n",
-						pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], dado);
-			}
-			// ACESSO NORMAL À RAM
 			// sb (Armazena 1 byte da parte menos significativa de rs2 na memória [rs1 + offset])
-			else if (funct3 == 0b000) 
+			if (funct3 == 0b000) 
 			{
-				if (endereco < offset || endereco >= offset + 32 * 1024)
-				{
-					prepMstatus(&registradoresCSRs[0]);
-					registrarExcecao(7, pc, endereco, registradoresCSRs, output, &pc);
-					continue;
+				const uint32_t endereco = registradores[rs1] + imm_s;
+
+				// ACESSO AO CLINT
+				if (endereco == 0x02000000)
+				{ // MSIP
+					clint_msip = registradores[rs2] & 0x1;
+					fprintf(output, "0x%08x:sb %s,0x%03x(%s) clint_msip=0x%02x\n",
+							pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], clint_msip);
 				}
-				const uint8_t resultado = registradores[rs2] & 0xFF;
-				mem[endereco - offset] = resultado;
-				fprintf(output, "0x%08x:sb %s,0x%03x(%s) mem[0x%08x]=0x%02x\n",
-						pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], endereco, resultado);
+				else if (endereco == 0x0200BFF8)
+				{ // MTIME low
+					clint_mtime = (clint_mtime & 0xFFFFFFFF00000000) | (registradores[rs2] & 0xFF);
+					fprintf(output, "0x%08x:sb %s,0x%03x(%s) clint_mtime_low+=0x%02x\n",
+							pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], registradores[rs2] & 0xFF);
+				}
+				else if (endereco == 0x0200BFFC)
+				{ // MTIME high
+					clint_mtime = (clint_mtime & 0x00000000FFFFFFFF) | ((uint64_t)(registradores[rs2] & 0xFF) << 32);
+					fprintf(output, "0x%08x:sb %s,0x%03x(%s) clint_mtime_high+=0x%02x\n",
+							pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], registradores[rs2] & 0xFF);
+				}
+				else if (endereco == 0x02004000)
+				{ // MTIMECMP low
+					clint_mtimecmp = (clint_mtimecmp & 0xFFFFFFFF00000000) | (registradores[rs2] & 0xFF);
+					fprintf(output, "0x%08x:sb %s,0x%03x(%s) clint_mtimecmp_low=0x%02x\n",
+							pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], registradores[rs2] & 0xFF);
+				}
+				else if (endereco == 0x02004004)
+				{ // MTIMECMP high
+					clint_mtimecmp = (clint_mtimecmp & 0x00000000FFFFFFFF) | ((uint64_t)(registradores[rs2] & 0xFF) << 32);
+					fprintf(output, "0x%08x:sb %s,0x%03x(%s) clint_mtimecmp_high=0x%02x\n",
+							pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], registradores[rs2] & 0xFF);
+				}
+				// ACESSO À UART
+				else if (endereco == 0x10000000)
+				{
+					const uint8_t dado = registradores[rs2] & 0xFF;
+					fputc(dado, output2);
+					fflush(output2);
+					registradoresUART[0] = dado;
+					fprintf(output, "0x%08x:sb %s,0x%03x(%s) uart[0]=0x%02x\n",
+							pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], dado);
+				}
+				// ACESSO NORMAL À RAM
+				else 
+				{
+					if (endereco < offset || endereco >= offset + 32 * 1024)
+					{
+						prepMstatus(&registradoresCSRs[0]);
+						registrarExcecao(7, pc, endereco, registradoresCSRs, output, &pc);
+						continue;
+					}
+					const uint8_t resultado = registradores[rs2] & 0xFF;
+					mem[endereco - offset] = resultado;
+					fprintf(output, "0x%08x:sb %s,0x%03x(%s) mem[0x%08x]=0x%02x\n",
+							pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], endereco, resultado);
+				}
 			}
 
 			// sh ( Armazena 2 bytes da parte menos significativa de rs2 na memória [rs1 + offset])
@@ -1262,45 +1265,65 @@ int main(int argc, char *argv[])
 						resultado & 0xFFFF);
 			}
 
-			// sw ( Armazena 2 bytes da parte menos significativa de rs2 na memória [rs1 + offset])
+			// sw (Armazena 4 bytes da parte menos significativa de rs2 na memória [rs1 + offset])
 			else if (funct3 == 0b010)
 			{
-
 				const uint32_t endereco = registradores[rs1] + imm_s;
 
-				// Tratamento da exceção 7 — Store Access Fault. Quando a instrução de escrita tenta acessar um endereço inválido na memória
-				if (endereco < offset || endereco + 3 >= offset + 32 * 1024)
-				{
-					// preparando mstatus para a excessão
-					prepMstatus(&registradoresCSRs[0]);
-					registrarExcecao(7, pc, endereco, registradoresCSRs, output, &pc);
-					continue;
+				// ACESSO AO CLINT (sw pode precisar acessar registradores de 32 bits)
+				if (endereco == 0x02000000)
+				{ // MSIP
+					clint_msip = registradores[rs2] & 0x1;
+					fprintf(output, "0x%08x:sw %s,0x%03x(%s) mem[0x%08x]=0x%08x\n",
+							pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], endereco, registradores[rs2]);
 				}
+				else if (endereco == 0x0200BFF8)
+				{ // MTIME low (32 bits)
+					clint_mtime = (clint_mtime & 0xFFFFFFFF00000000) | registradores[rs2];
+					fprintf(output, "0x%08x:sw %s,0x%03x(%s) mem[0x%08x]=0x%08x\n",
+							pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], endereco, registradores[rs2]);
+				}
+				else if (endereco == 0x0200BFFC)
+				{ // MTIME high (32 bits)
+					clint_mtime = (clint_mtime & 0x00000000FFFFFFFF) | ((uint64_t)registradores[rs2] << 32);
+					fprintf(output, "0x%08x:sw %s,0x%03x(%s) mem[0x%08x]=0x%08x\n",
+							pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], endereco, registradores[rs2]);
+				}
+				else if (endereco == 0x02004000)
+				{ // MTIMECMP low (32 bits)
+					clint_mtimecmp = (clint_mtimecmp & 0xFFFFFFFF00000000) | registradores[rs2];
+					fprintf(output, "0x%08x:sw %s,0x%03x(%s) mem[0x%08x]=0x%08x\n",
+							pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], endereco, registradores[rs2]);
+				}
+				else if (endereco == 0x02004004)
+				{ // MTIMECMP high (32 bits)
+					clint_mtimecmp = (clint_mtimecmp & 0x00000000FFFFFFFF) | ((uint64_t)registradores[rs2] << 32);
+					fprintf(output, "0x%08x:sw %s,0x%03x(%s) mem[0x%08x]=0x%08x\n",
+							pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], endereco, registradores[rs2]);
+				}
+				// ACESSO NORMAL À RAM
+				else
+				{
+					if (endereco < offset || endereco + 3 >= offset + 32 * 1024)
+					{
+						prepMstatus(&registradoresCSRs[0]);
+						registrarExcecao(7, pc, endereco, registradoresCSRs, output, &pc);
+						continue;
+					}
 
-				const uint32_t resultado = registradores[rs2];
-				// Armazena os 4 bytes na memória simulada (assumindo 'mem' como array de bytes)
+					const uint32_t resultado = registradores[rs2];
+					mem[endereco - offset] = resultado & 0xFF;
+					mem[endereco + 1 - offset] = (resultado >> 8) & 0xFF;
+					mem[endereco + 2 - offset] = (resultado >> 16) & 0xFF;
+					mem[endereco + 3 - offset] = (resultado >> 24) & 0xFF;
 
-				mem[endereco - offset] = resultado & 0xFF;
-				mem[endereco + 1 - offset] = (resultado >> 8) & 0xFF;
-				mem[endereco + 2 - offset] = (resultado >> 16) & 0xFF;
-				mem[endereco + 3 - offset] = (resultado >> 24) & 0xFF;
-
-				fprintf(output, "0x%08x:sw %s,0x%03x(%s) mem[0x%08x]=0x%08x\n",
-						pc,			   // Endereço da instrução
-						regNomes[rs2], // Nome do registrador rs2
-						imm_s & 0xFFF, // imediato do tipo s
-						regNomes[rs1], // Nome do registrador rs1
-						endereco,	   // endereço
-						resultado);
-
-				// if (rd != 0){
-				// registradores[rd] = resultado;
-				// }
+					fprintf(output, "0x%08x:sw %s,0x%03x(%s) mem[0x%08x]=0x%08x\n",
+							pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], endereco, resultado);
+				}
 			}
-			// Tratamento da exceção 2 — Illegal Instruction. Quando a instrução não é reconhecida (opcode ou funct inválido)
+			// Tratamento da exceção 2 — Illegal Instruction
 			else
 			{
-				// preparando mstatus para a excessão
 				prepMstatus(&registradoresCSRs[0]);
 				registrarExcecao(2, pc, instrucao, registradoresCSRs, output, &pc);
 				continue;
