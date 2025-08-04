@@ -1933,7 +1933,7 @@ int main(int argc, char *argv[])
 				pc = (registradoresCSRs[2] & ~0x3) + 4 * (registradoresCSRs[4] & 0x7FFFFFFF);
 				continue;
 			}
-
+            
            pc += 4;
 		}
 		return 0;
