@@ -3318,33 +3318,30 @@ int main(int argc, char *argv[])
 			}
 
 			// blt (Compara rs1 e rs2 com sinal. Se rs1 < rs2, salta para PC + offset)
-			else if (funct3 == 0b100)
+			else if (funct3 == 0b100) 
 			{
-				const int32_t rs1_sinal = registradores[rs1];
-				const int32_t rs2_sinal = registradores[rs2];
-				// const uint32_t pc_anterior = pc;
+				const int32_t rs1_sinal = (int32_t)registradores[rs1];
+				const int32_t rs2_sinal = (int32_t)registradores[rs2];
 
 				const int condicao = rs1_sinal < rs2_sinal;
-				// const uint32_t proximo_pc = condicao ? pc + imm_b : pc + 4;
 
-				// const uint32_t campo_imm_b = (imm_b >> 1) & 0xFFF;
-
-				fprintf(output, "0x%08x:blt %s,%s,0x%03x (0x%08x<0x%08x)=%c1->pc=0x%08x\n",
-						pc,					// Endereço da instrução
-						regNomes[rs1],		// Nome do registrador rs1
-						regNomes[rs2],		// Nome do registrador rs2
-						imm_b & 0xFFF,		// imediato do tipo b
-						registradores[rs1], // valor de rs1
-						registradores[rs2], // valor de rs2
-						condicao ? 'u' : '0',
-						((int32_t)registradores[rs1] < (int32_t)registradores[rs2]) ? pc + imm_b : pc + 4);
+				fprintf(output, "0x%08x:blt %s,%s,0x%03x (0x%08x<0x%08x)=%d->pc=0x%08x\n",
+						pc,                  // Endereço da instrução
+						regNomes[rs1],       // Nome do registrador rs1
+						regNomes[rs2],       // Nome do registrador rs2
+						imm_b & 0xFFF,        // imediato do tipo b
+						registradores[rs1],   // valor de rs1
+						registradores[rs2],   // valor de rs2
+						condicao,                       
+						condicao ? pc + imm_b : pc + 4);
 
 				if (condicao)
 				{
 					pc += imm_b;
-					continue;
+					continue; 
 				}
 			}
+
 
 			// bge (Compara rs1 e rs2 com sinal. Se rs1 >= rs2, salta para PC + offset)
 			else if (funct3 == 0b101)
