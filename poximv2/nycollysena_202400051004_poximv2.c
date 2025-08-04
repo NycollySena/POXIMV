@@ -2101,7 +2101,7 @@ int main(int argc, char *argv[])
 
 	// inicialização de mtvec pra ebreak
 	// tirar no projeto final
-	registradoresCSRs[2] = 0x80000094;
+	//registradoresCSRs[2] = 0x80000094;
 
 	// registrador pc inicializado com offset. pq o offset é quem esta com o endereço inicial da memoria simulada
 	//  o pc é o marca pagina (mostra onde vc esta agora e avança para a proxima instrução)
@@ -3729,7 +3729,7 @@ int main(int argc, char *argv[])
 				int idx = csrIndex(imm_csr);
 				if (idx == -1)
 				{
-					fprintf(stderr, "CSR 0x%03x não suportado.\n", imm_csr);
+					fprintf(stderr, "CSR 0x%03x não suportado.\n", imm_csr); 
 					run = 0; // ou continue;
 					break;	 // depende da estrutura do seu código
 				}
