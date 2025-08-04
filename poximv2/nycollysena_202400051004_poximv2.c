@@ -1898,13 +1898,16 @@ int main(int argc, char *argv[])
 				(clint_msip & 0x1))				// msip: interrupção de software solicitada
 			{
 				registradoresCSRs[4] = 0x80000003; // mcause: software interrupt
-				registradoresCSRs[3] = pc;	   // mepc: instrução atual
+				registradoresCSRs[3] = pc + 4;	   // mepc: proxima instrução 
 				registradoresCSRs[5] = 0;		   // mtval: valor adicional (0 para interrupções)
 
 				prepMstatus(&registradoresCSRs[0]);
 
 				fprintf(output, ">interrupt:software                cause=0x%08x,epc=0x%08x,tval=0x%08x\n",
 						registradoresCSRs[4], registradoresCSRs[3], registradoresCSRs[5]);
+
+				 // IMPORTANTE: Limpar o MSIP para evitar loop infinito
+                clint_msip = 0;
 
 				// Redireciona o PC para mtvec
 				pc = (registradoresCSRs[2] & ~0x3) + 4 * (registradoresCSRs[4] & 0x7FFFFFFF);
