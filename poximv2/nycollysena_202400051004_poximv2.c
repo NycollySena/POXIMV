@@ -1240,8 +1240,7 @@ int main(int argc, char *argv[])
 					break;
 				}
 
-				fprintf(output,
-						"0x%08x:sw     %s,0x%03x(%s) mem[0x%08x]=0x%08x\n",
+				fprintf(output, "0x%08x:sw     %s,0x%03x(%s) mem[0x%08x]=0x%08x\n",
 						pc,                        // Endereço da instrução
 						regNomes[rs2],             // Nome do registrador rs2
 						imm_s & 0xFFF,             //imediato do tipo s
@@ -1269,8 +1268,7 @@ int main(int argc, char *argv[])
 						plic_pending |= (1 << 10);
 				}
 
-				fprintf(output,
-						"0x%08x:sb     %s,0x%03x(%s) mem[0x%08x]=0x%02x\n",
+				fprintf(output, "0x%08x:sb     %s,0x%03x(%s) mem[0x%08x]=0x%02x\n",
 						pc,                      // Endereço da instrução
 						regNomes[rs2],           // Nome do registrador rs2
 						imm_s & 0xFFF,           //imediato do tipo s
@@ -1301,8 +1299,7 @@ int main(int argc, char *argv[])
 			// Independente de qual registrador PLIC foi acessado, imprime o log da operação
 			if (addr == 0x0C000028 || addr == 0x0C002000 || addr == 0x0C200004)
 			{
-				fprintf(output,
-						"0x%08x:sw     %s,0x%03x(%s) mem[0x%08x]=0x%08x\n",
+				fprintf(output, "0x%08x:sw     %s,0x%03x(%s) mem[0x%08x]=0x%08x\n",
 						pc,                       // Endereço da instrução
 						regNomes[rs2],            // Nome do registrador rs2
 						imm_s & 0xFFF,            //imediato do tipo s
@@ -1311,7 +1308,7 @@ int main(int argc, char *argv[])
 						valor_lido);
 				break;
 			}
-			// sb (Store Byte)
+			// sb (Armazena 1 byte da parte menos significativa de rs2 na memória [rs1 + offset])
 			if (funct3 == 0b000)
 			{
 				const uint32_t endereco = registradores[rs1] + imm_s;
@@ -1334,7 +1331,7 @@ int main(int argc, char *argv[])
 						resultado);
 			}
 
-			// sh (Store Halfword)
+			// sh ( Armazena 2 bytes da parte menos significativa de rs2 na memória [rs1 + offset])
 			else if (funct3 == 0b001)
 			{
 				const uint32_t endereco = registradores[rs1] + imm_s;
@@ -1359,7 +1356,7 @@ int main(int argc, char *argv[])
 						resultado);
 			}
 
-			// sw (Store Word)
+			// sw (Armazena 4 bytes da parte menos significativa de rs2 na memória [rs1 + offset])
 			else if (funct3 == 0b010)
 			{
 				const uint32_t endereco = registradores[rs1] + imm_s;
