@@ -71,29 +71,7 @@ void registrarExcecao(uint32_t causa, uint32_t endereco_instrucao, uint32_t tval
 		registradoresCSRs[indice_mepc] = endereco_instrucao; // escrevendo o endereço da instrução que causou
 	}
 
-	// Define novo PC com base em mtvec
-	if (indice_mtvec != -1 && pc_ptr != NULL)
-	{
-		uint32_t mtvec = registradoresCSRs[indice_mtvec];
-		uint32_t modo = mtvec & 0x3;  // bits 1:0 definem o modo
-		uint32_t base = mtvec & ~0x3; // zera os 2 últimos bits para obter o endereço base
-
-		if (modo == 0)
-		{
-			// Modo direto
-			*pc_ptr = base;
-		}
-		else if (modo == 1)
-		{
-			// Modo vetorizado
-			*pc_ptr = base + 4 * causa;
-		}
-		else
-		{
-			// Modo reservado ou inválido — assume modo direto como fallback
-			*pc_ptr = base;
-		}
-	}
+	*pc_ptr = registradoresCSRs[indice_mtvec];
 
 	// Ignora exceção de breakpoint (cause == 3), pois já foi tratada por 'ebreak'
 	if (causa == 0x3)
@@ -120,8 +98,8 @@ int main(int argc, char *argv[])
 { // argumento para abrir o projeto no terminal, entrega a entrada e fala a saida
   // "./meuprograma" "entrada.hex"  "saida.out"
 
-	FILE *input = fopen(argv[1], "r");	// abre um arquivo de entrada
-	FILE *output = fopen(argv[2], "w"); // abre/cria em arquivo de saida (os arquivos do argumento do main)
+	 FILE *input = fopen(argv[1], "r");	// abre um arquivo de entrada
+	 FILE *output = fopen(argv[2], "w"); // abre/cria em arquivo de saida (os arquivos do argumento do main)
 
 	FILE *input2 = fopen("qemu.terminal.in", "r");	 // Abre o arquivo de entrada UART
 	FILE *output2 = fopen("qemu.terminal.out", "w"); // Abre/cria o arquivo de saída UART
@@ -151,15 +129,15 @@ int main(int argc, char *argv[])
 	uint64_t clint_mtimecmp = -1; // alvo da interrupção (MTIMECMP)
 
 	// Registradores PLIC
-	 uint32_t plic_priority = 0;
-	 uint32_t plic_pending = 0;
-	 uint32_t plic_enable = 0;
-	 uint32_t plic_threshold = 0;
-	 uint32_t plic_claim = 0;
+	uint32_t plic_priority = 0;
+	uint32_t plic_pending = 0;
+	uint32_t plic_enable = 0;
+	uint32_t plic_threshold = 0;
+	uint32_t plic_claim = 0;
 
 	// inicialização de mtvec pra ebreak
 	// tirar no projeto final
-	//registradoresCSRs[2] = 0x80000094;
+	registradoresUART[5] = 0x04;
 
 	// registrador pc inicializado com offset. pq o offset é quem esta com o endereço inicial da memoria simulada
 	//  o pc é o marca pagina (mostra onde vc esta agora e avança para a proxima instrução)
@@ -210,8 +188,7 @@ int main(int argc, char *argv[])
 	uint8_t run = 1; // pra controlar o loop
 	// laço principal de execução do simulador
 	while (run)
-	{ // o loop que vai buscar e decodificar as instruções
-
+	{
 		// Tratamento da exceção 1 — Instruction Access Fault. Quando pc está fora da memória válida
 		if (pc < offset || pc >= offset + 32 * 1024)
 		{
@@ -882,456 +859,534 @@ int main(int argc, char *argv[])
 
 		// tipo Load Byte
 		case 0b0000011:
-			// lb (Carrega um byte da memória ou UART no endereço rs1 + offset, estende para 32 bits e armazena em rd)
+			uint32_t valor_lido = 0;
+			uint32_t addr = registradores[rs1] + imm_i;
+
+			// Acesso à memória do CLINT
+			if (addr >= 0x02000000 && addr <= 0x0200BFFC)
+			{
+				switch (addr)
+				{
+				 // MSIP (Software interrupt pending)
+				case 0x02000000:
+					valor_lido = clint_msip;
+					break;
+					// MTIMECMP (parte baixa)
+				case 0x02004000:
+					valor_lido = (uint32_t)(clint_mtimecmp & 0xFFFFFFFF);
+					break;
+					// MTIMECMP (parte alta)
+				case 0x02004004:
+					valor_lido = (uint32_t)(clint_mtimecmp >> 32);
+					break;
+					// MTIME (parte baixa dos 64 bits)
+				case 0x0200BFF8:
+					valor_lido = (uint32_t)(clint_mtime & 0xFFFFFFFF);
+					break;
+					// MTIME (parte alta)
+				case 0x0200BFFC:
+					valor_lido = (uint32_t)(clint_mtime >> 32);
+					break;
+				default:
+					// Endereço não mapeado no intervalo CLINT
+					valor_lido = 0;
+					break;
+				}
+
+				if (rd != 0)
+				{
+					registradores[rd] = valor_lido;
+				}
+
+				fprintf(output, "0x%08x:lw     %s,0x%03x(%s)  %s=mem[0x%08x]=0x%08x\n",
+						pc,                               //endereço da instrução
+						regNomes[rd],                     //nome do registrador destino
+						imm_i & 0xFFF,                    //imediato do tipo i
+						regNomes[rs1],                    //nome do registrador rs1
+						regNomes[rd],                     //nome do registrador destino
+						addr,                             //endereço da memoria acessada
+						registradores[rd]);                //valor do registrador destino
+			}
+
+			// PLIC
+			// Acesso aos registradores do PLIC (endereços mapeados)
+			switch (addr)
+			{
+				// PRIORITY (prioridade de uma interrupção)
+			case 0x0C000028:
+				valor_lido = plic_priority;
+				break;
+				// PENDING (quais interrupções estão pendentes)
+			case 0x0C001000:
+				valor_lido = plic_pending;
+				break;
+				// ENABLE (quais interrupções estão habilitadas para gerar exceções)
+			case 0x0C002000:
+				valor_lido = plic_enable;
+				break;
+				//CLAIM (usado pelo processador para "reclamar" a interrupção atual)
+			case 0x0C200004:
+				if ((plic_pending & (1 << 10)) && (plic_enable & (1 << 10)))
+				{
+					valor_lido = 10; // ID da UART
+				}
+				else
+				{
+					valor_lido = 0; // Nenhuma interrupção pendente
+				}
+				break;
+				// THRESHOLD (limite mínimo de prioridade)
+			case 0x0C200000:
+				valor_lido = plic_threshold;
+				break;
+			default:
+				// Endereço não mapeado para PLIC
+				valor_lido = 0;
+				break;
+			}
+
+			if (valor_lido != 0 || (addr >= 0x0C000000 && addr <= 0x0C20FFFF)) // condição para controle, opcional
+			{
+				if (rd != 0)
+					registradores[rd] = valor_lido;
+
+				fprintf(output, "0x%08x:lw     %s,0x%03x(%s)  %s=mem[0x%08x]=0x%08x\n",
+						pc,                       // Endereço da instrução
+						regNomes[rd],             // Nome do registrador destino
+						imm_i & 0xFFF,            //imediato do tipo i
+						regNomes[rs1],            //Nome do registrador rs1
+						regNomes[rd],             //Nome do registrador destino
+						addr,                     //endereço da memoria acessada
+						registradores[rd]);        //valor do registrador destino
+
+				break;
+			}
+
+			// ACESSO À UART E PLIC
+			if (addr >= 0x10000000 && addr <= 0x10000007)
+			{
+				if (addr == 0x10000000)
+				{
+					// UART RHR: lê caractere do terminal UART de entrada
+					int c = fgetc(input2);
+					printf("char lido: %02x\n", c);
+					if (c == EOF)
+					{
+						registradoresUART[0] = 0; // nada disponível, retorna 0
+					}
+					else
+					{
+						registradoresUART[0] = (uint8_t)c;
+					}
+					valor_lido = (uint32_t)(int32_t)((int8_t)registradoresUART[0]);
+
+					if (rd != 0)
+						registradores[rd] = valor_lido;
+
+					fprintf(output, "0x%08x:%s  %s,0x%03x(%s)  %s=mem[0x%08x]=0x%08x\n",
+							pc,                                        // Endereço da instrução
+							funct3 == 0b000 ? "lb    " : "lbu   ",     //condição para saber qual instrução
+							regNomes[rd],                              // Nome do registrador destino
+							imm_i & 0xFFF,                             //imediato do tipo i 
+							regNomes[rs1],                             // Nome do registrador rs1
+							regNomes[rd],                              // Nome do registrador destino
+							addr,                                      // enderço da memoria acessada
+							registradores[rd]);                        //valor do registrador destino
+
+					break;
+				}
+				else if (addr == 0x10000002)
+				{
+					// Retorna o status do UART (Line Status Register)
+					// Bit 2 = 1 significa "dado disponível" segundo o assembly
+					valor_lido = registradoresUART[5]; // por exemplo, 0x04 se dado disponível
+
+					if (rd != 0)
+						registradores[rd] = (funct3 == 0b000) ? (int8_t)valor_lido : (uint8_t)valor_lido;
+
+					fprintf(output, "0x%08x:%s  %s,0x%03x(%s)  %s=mem[0x%08x]=0x%08x\n",
+							pc,                                       // Endereço da instrução
+							funct3 == 0b000 ? "lb    " : "lbu   ",   //condição para saber qual instrução
+							regNomes[rd],                            // Nome do registrador destino
+							imm_i & 0xFFF,                           //imediato do tipo i 
+							regNomes[rs1],                           // Nome do registrador rs1
+							regNomes[rd],                            // Nome do registrador destino
+							addr,                                    // enderço da memoria acessada
+							registradores[rd]);                      //valor do registrador destino
+
+					break;
+				}
+
+				else if (addr == 0x10000005)
+				{
+					// UART LSR: indica se há dado disponível (bit 0 = 1 se sim)
+					int c = fgetc(input2); // tenta ler um caractere
+					if (c == EOF)
+					{
+						registradoresUART[5] = 0x60; // bit 0 = 0 → nada disponível
+					}
+					else
+					{
+						ungetc(c, input2);			 // devolve o caractere
+						registradoresUART[5] = 0x61; // bit 0 = 1 → dado disponível
+
+						// Aqui você pode ativar a interrupção no PLIC (fonte 1: UART)
+					}
+					valor_lido = registradoresUART[5];
+
+					if (rd != 0)
+						registradores[rd] = valor_lido;
+
+					fprintf(output, "0x%08x:%s  %s,0x%03x(%s)  %s=mem[0x%08x]=0x%08x\n",
+							pc,                                       // Endereço da instrução
+							funct3 == 0b000 ? "lb    " : "lbu   ",    //condição para saber qual instrução
+							regNomes[rd],                             // Nome do registrador destino
+							imm_i & 0xFFF,                            //imediato do tipo i
+							regNomes[rs1],                            // Nome do registrador rs1
+							regNomes[rd],                             // Nome do registrador destino
+							addr,                                     // enderço da memoria acessada
+							registradores[rd]);                       //valor do registrador destino
+
+					break;
+				}
+			}
+
+			// lb (Carrega um byte da memória no endereço rs1 + offset, extende para 32 bits com sinal e armazena em rd)
 			if (funct3 == 0b000)
 			{
 				const uint32_t endereco = registradores[rs1] + imm_i;
 				uint32_t resultado = 0;
 
-				// ACESSO À UART
-				if (endereco >= 0x10000000 && endereco <= 0x10000007)
-				{
-					if (endereco == 0x10000000)
-					{
-						// UART RHR: lê caractere do terminal UART de entrada
-						int c = fgetc(input2);
-						if (c == EOF)
-						{
-							registradoresUART[0] = 0; // nada disponível, retorna 0
-						}
-						else
-						{
-							registradoresUART[0] = (uint8_t)c;
-						}
-						resultado = (uint32_t)(int32_t)((int8_t)registradoresUART[0]);
-					}
-					else if (endereco == 0x10000005)
-					{
-						// UART LSR: indica se há dado disponível (bit 0 = 1 se sim)
-						int c = fgetc(input2); // tenta ler um caractere
-						if (c == EOF)
-						{
-							registradoresUART[5] = 0x60; // bit 0 = 0 → nada disponível
-						}
-						else
-						{
-							ungetc(c, input2);			 // devolve o caractere
-							registradoresUART[5] = 0x61; // bit 0 = 1 → dado disponível
-
-							//Ativa a interrupção no PLIC (fonte 1: UART)
-		                    plic_pending |= (1 << 1);
-
-						}
-						resultado = registradoresUART[5];
-					}
-					break;
-				}
-
-				// ACESSO AO CLINT
-				else if (endereco >= 0x02000000 && endereco <= 0x02004004)
-				{
-					if (endereco == 0x02000000)
-					{ // MSIP (Software interrupt pending)
-						resultado = clint_msip & 0x1;
-					}
-					else if (endereco == 0x0200BFF8)
-					{ // MTIME (parte baixa dos 64 bits)
-						resultado = (uint32_t)(clint_mtime & 0xFFFFFFFF);
-					}
-					else if (endereco == 0x0200BFFC)
-					{ // MTIME (parte alta)
-						resultado = (uint32_t)(clint_mtime >> 32);
-						printf("teste");
-					}
-					else if (endereco == 0x02004000)
-					{ // MTIMECMP (parte baixa)
-						resultado = (uint32_t)(clint_mtimecmp & 0xFFFFFFFF);
-					}
-					else if (endereco == 0x02004004)
-					{ // MTIMECMP (parte alta)
-						resultado = (uint32_t)(clint_mtimecmp >> 32);
-					}
-
-					break;
-				}
-
-				// EXCEÇÃO DE ACESSO INVÁLIDO
-				else if (endereco < offset || endereco >= offset + 32 * 1024)
+				// Tratamento da exceção 5 — Load Access Fault
+				if (endereco < offset || endereco >= offset + 32 * 1024)
 				{
 					prepMstatus(&registradoresCSRs[0]);
 					registrarExcecao(5, pc, endereco, registradoresCSRs, output, &pc);
 					continue;
 				}
 
-				// ACESSO NORMAL À MEMÓRIA RAM
-				else
-				{
-					const int8_t byte = (int8_t)mem[endereco - offset];
-					resultado = (uint32_t)(int32_t)byte;
-				}
+				const int8_t byte = (int8_t)mem[endereco - offset];
+				resultado = (uint32_t)(int32_t)byte;
 
 				fprintf(output, "0x%08x:lb %s,0x%03x(%s) %s=mem[0x%08x]=0x%08x\n",
-						pc,
-						regNomes[rd],
-						imm_i & 0xFFF,
-						regNomes[rs1],
-						regNomes[rd],
+						pc,                              // Endereço da instrução
+						regNomes[rd],                    // Nome do registrador destino
+						imm_i & 0xFFF,                   //imediato do tipo i
+						regNomes[rs1],                   // Nome do registrador rs1
+						regNomes[rd],                    // Nome do registrador destino
 						endereco,
 						resultado);
 
 				if (rd != 0)
-				{
 					registradores[rd] = resultado;
-				}
 			}
 
-			// lh (Carrega um halfword (16 bits) da memória no endereço rs1 + offset (com extensão de sinal)
+			// lh (Carrega halfword de 16 bits com extensão de sinal)
 			else if (funct3 == 0b001)
 			{
 				const uint32_t endereco = registradores[rs1] + imm_i;
 
-				// Tratamento da exceção 5 — Load Access Fault. Quando a instrução de leitura tenta acessar um endereço inválido na memória
 				if (endereco < offset || endereco >= offset + 32 * 1024)
 				{
-					// preparando mstatus para a excessão
 					prepMstatus(&registradoresCSRs[0]);
 					registrarExcecao(5, pc, endereco, registradoresCSRs, output, &pc);
 					continue;
 				}
-				// Lê dois bytes (meia palavra) da memória
-				uint32_t resultado = 0;
 
 				int16_t halfword = (int16_t)(mem[endereco - offset] | (mem[endereco + 1 - offset] << 8));
-				resultado = (uint32_t)(int32_t)halfword;
+				uint32_t resultado = (uint32_t)(int32_t)halfword;
+
 				fprintf(output, "0x%08x:lh %s,0x%03x(%s) %s=mem[0x%08x]=0x%08x\n",
-						pc,			   // Endereço da instrução
-						regNomes[rd],  // Nome do registrador destino
-						imm_i & 0xFFF, // imediato do tipo i
-						regNomes[rs1], // Nome do registrador rs1
-						regNomes[rd],  // Nome do registrador destino
-						endereco,	   // endereço usado para encontrar a memoria
+						pc,                            // Endereço da instrução
+						regNomes[rd],                  // Nome do registrador destino 
+						imm_i & 0xFFF,                 //imediato do tipo i
+						regNomes[rs1],                 // Nome do registrador rs1
+						regNomes[rd],                  // Nome do registrador destino
+						endereco,
 						resultado);
 
 				if (rd != 0)
-				{
 					registradores[rd] = resultado;
-				}
 			}
 
 			// lw (Carrega uma word (32 bits) da memória no endereço rs1 + offset e armazena em rd)
 			else if (funct3 == 0b010)
-		    {
-			const uint32_t endereco = registradores[rs1] + imm_i;
-
-			// Acesso aos registradores do PLIC (endereços mapeados)
-			if (endereco == 0x0C000000) // PRIORITY
 			{
-				uint32_t resultado = plic_priority;
-				fprintf(output, "0x%08x:lw %s,0x%03x(%s) %s=mem[0x%08x]=0x%08x\n",
-						pc, regNomes[rd], imm_i & 0xFFF, regNomes[rs1], regNomes[rd], endereco, resultado);
+				const uint32_t endereco = registradores[rs1] + imm_i;
+
+				if (endereco < offset || endereco + 3 >= offset + 32 * 1024)
+				{
+					prepMstatus(&registradoresCSRs[0]);
+					registrarExcecao(5, pc, endereco, registradoresCSRs, output, &pc);
+					continue;
+				}
+
+				uint32_t resultado = mem[endereco - offset] |
+									 (mem[endereco + 1 - offset] << 8) |
+									 (mem[endereco + 2 - offset] << 16) |
+									 (mem[endereco + 3 - offset] << 24);
+
+				fprintf(output, "0x%08x:lw %s,0x%03x(%s) mem[0x%08x]=0x%08x\n",
+						pc,                          // Endereço da instrução
+						regNomes[rd],                // Nome do registrador destino 
+						imm_i & 0xFFF,               // imediato do tipo i
+						regNomes[rs1],               //nome do registrador rs1
+						endereco,
+						resultado);
+
 				if (rd != 0)
 					registradores[rd] = resultado;
-				continue;
-			}
-			else if (endereco == 0x0C001000) // PENDING
-			{
-				uint32_t resultado = plic_pending;
-				fprintf(output, "0x%08x:lw %s,0x%03x(%s) %s=mem[0x%08x]=0x%08x\n",
-						pc, regNomes[rd], imm_i & 0xFFF, regNomes[rs1], regNomes[rd], endereco, resultado);
-				if (rd != 0)
-					registradores[rd] = resultado;
-				continue;
-			}
-			else if (endereco == 0x0C002000) // ENABLE
-			{
-				uint32_t resultado = plic_enable;
-				fprintf(output, "0x%08x:lw %s,0x%03x(%s) %s=mem[0x%08x]=0x%08x\n",
-						pc, regNomes[rd], imm_i & 0xFFF, regNomes[rs1], regNomes[rd], endereco, resultado);
-				if (rd != 0)
-					registradores[rd] = resultado;
-				continue;
-			}
-			else if (endereco == 0x0C200000) // THRESHOLD
-			{
-				uint32_t resultado = plic_threshold;
-				fprintf(output, "0x%08x:lw %s,0x%03x(%s) %s=mem[0x%08x]=0x%08x\n",
-						pc, regNomes[rd], imm_i & 0xFFF, regNomes[rs1], regNomes[rd], endereco, resultado);
-				if (rd != 0)
-					registradores[rd] = resultado;
-				continue;
-			}
-			else if (endereco == 0x0C200004) // CLAIM
-			{
-				uint32_t resultado = plic_claim;
-				fprintf(output, "0x%08x:lw %s,0x%03x(%s) %s=mem[0x%08x]=0x%08x\n",
-						pc, regNomes[rd], imm_i & 0xFFF, regNomes[rs1], regNomes[rd], endereco, resultado);
-				if (rd != 0)
-					registradores[rd] = resultado;
-				continue;
 			}
 
-			// ACESSO NORMAL A RAM
-			if (endereco < offset || endereco + 3 >= offset + 32 * 1024)
-			{
-				prepMstatus(&registradoresCSRs[0]);
-				registrarExcecao(5, pc, endereco, registradoresCSRs, output, &pc);
-				continue;
-			}
-
-			uint32_t resultado = mem[endereco - offset] |
-								(mem[endereco + 1 - offset] << 8) |
-								(mem[endereco + 2 - offset] << 16) |
-								(mem[endereco + 3 - offset] << 24);
-
-			fprintf(output, "0x%08x:lw %s,0x%03x(%s) mem[0x%08x]=0x%08x\n",
-					pc, regNomes[rd], imm_i & 0xFFF, regNomes[rs1], endereco, resultado);
-
-			if (rd != 0)
-				registradores[rd] = resultado;
-
-			} 
-             //fim lw
-
-			// lbu (Carrega 1 byte da memória no endereço rs1 + offset, faz zero-extend e armazena em rd)
+			// lbu (Carrega byte com zero-extend)
 			else if (funct3 == 0b100)
 			{
-
 				const uint32_t endereco = registradores[rs1] + imm_i;
 
-				// Tratamento da exceção 5 — Load Access Fault. Quando a instrução de leitura tenta acessar um endereço inválido na memória
 				if (endereco < offset || endereco >= offset + 32 * 1024)
 				{
-					// preparando mstatus para a excessão
 					prepMstatus(&registradoresCSRs[0]);
 					registrarExcecao(5, pc, endereco, registradoresCSRs, output, &pc);
 					continue;
 				}
-				uint32_t resultado = 0;
 
-				const uint8_t byte = mem[endereco - offset];
-				resultado = (uint32_t)byte; // zero-extension
+				uint32_t resultado = (uint32_t)mem[endereco - offset];
 
 				fprintf(output, "0x%08x:lbu %s,0x%03x(%s) %s=mem[0x%08x]=0x%08x\n",
-						pc,			   // Endereço da instrução
-						regNomes[rd],  // Nome do registrador destino
-						imm_i & 0xFFF, // imediato do tipo i
-						regNomes[rs1], // Nome do registrador rs1
-						regNomes[rd],  // Nome do registrador destino
-						endereco,	   // endereço usado para encontrar a memoria
+						pc,                           // Endereço da instrução      
+						regNomes[rd],                 //nome do registrador destino
+						imm_i & 0xFFF,                //imediato do tipo i
+						regNomes[rs1],                //nome do registrador rs1
+						regNomes[rd],                 //nome do registrador destino
+						endereco,
 						resultado);
 
 				if (rd != 0)
-				{
 					registradores[rd] = resultado;
-				}
 			}
 
-			// lhu (Carrega 2 bytes da memória no endereço rs1 + offset, faz zero-extend e armazena em rd)
+			// lhu (Carrega halfword com zero-extend)
 			else if (funct3 == 0b101)
 			{
-
 				const uint32_t endereco = registradores[rs1] + imm_i;
 
-				// Tratamento da exceção 5 — Load Access Fault. Quando a instrução de leitura tenta acessar um endereço inválido na memória
 				if (endereco < offset || endereco >= offset + 32 * 1024)
 				{
-					// preparando mstatus para a excessão
 					prepMstatus(&registradoresCSRs[0]);
 					registrarExcecao(5, pc, endereco, registradoresCSRs, output, &pc);
 					continue;
 				}
 
-				const uint16_t halfword = (mem[endereco - offset]) | (mem[endereco + 1 - offset] << 8);
-				const uint32_t resultado = (uint32_t)halfword;
+				uint16_t halfword = mem[endereco - offset] | (mem[endereco + 1 - offset] << 8);
+				uint32_t resultado = (uint32_t)halfword;
 
 				fprintf(output, "0x%08x:lhu %s,0x%03x(%s) %s=mem[0x%08x]=0x%08x\n",
-						pc,			   // Endereço da instrução
-						regNomes[rd],  // Nome do registrador destino
-						imm_i & 0xFFF, // imediato do tipo i
-						regNomes[rs1], // Nome do registrador rs1
-						regNomes[rd],  // Nome do registrador destino
-						endereco,	   // endereço usado para encontrar a memoria
+						pc,                            // Endereço da instrução  
+						regNomes[rd],                  //nome do registrador destino
+						imm_i & 0xFFF,                 //imediato do tipo i
+						regNomes[rs1],                 //nome do registrador rs1
+						regNomes[rd],                  //nome do registrador destino
+						endereco,
 						resultado);
 
 				if (rd != 0)
-				{
 					registradores[rd] = resultado;
-				}
 			}
 
-			// Tratamento da exceção 2 — Illegal Instruction. Quando a instrução não é reconhecida (opcode ou funct inválido)
+			// Tratamento da exceção para instrução ilegal
 			else
 			{
-				// preparando mstatus para a excessão
 				prepMstatus(&registradoresCSRs[0]);
 				registrarExcecao(2, pc, instrucao, registradoresCSRs, output, &pc);
 				continue;
 			}
-		
+
 			break;
-			
+			// tipo Store byte
+		case 0b0100011:
+		{
+			// Instruções de store
+			uint32_t addr = registradores[rs1] + imm_s;
+			uint32_t valor_lido = registradores[rs2];
 
-		// tipo Store byte
-		case 0b0100011:{
-		
-			// sb (Armazena 1 byte da parte menos significativa de rs2 na memória [rs1 + offset])
-			if (funct3 == 0b000) 
+			if (addr >= 0x02000000 && addr <= 0x0200BFFC)
 			{
-				const uint32_t endereco = registradores[rs1] + imm_s;
+				//Acesso à memória do CLINT
+				switch (addr)
+				{
+					// MSIP (Software interrupt pending)
+				case 0x02000000:
+					clint_msip = valor_lido & 0x1; // Atualiza MSIP (bit 0)
+					break;
+                    // MTIMECMP (parte baixa)
+				case 0x02004000:
+					clint_mtimecmp = (clint_mtimecmp & 0xFFFFFFFF00000000ULL) | (uint64_t)valor_lido;
+					break;
+                    // MTIMECMP (parte alta)
+				case 0x02004004:
+					clint_mtimecmp = (clint_mtimecmp & 0x00000000FFFFFFFFULL) | ((uint64_t)valor_lido << 32);
+					break;
+                    // MTIME (parte baixa dos 64 bits)
+				case 0x0200BFF8:
+					clint_mtime = (clint_mtime & 0xFFFFFFFF00000000ULL) | (uint64_t)valor_lido;
+					break;
+                    // MTIME (parte alta)
+				case 0x0200BFFC:
+					clint_mtime = (clint_mtime & 0x00000000FFFFFFFFULL) | ((uint64_t)valor_lido << 32);
+					break;
 
-				// ACESSO AO CLINT
-				if (endereco == 0x02000000)
-				{ // MSIP
-					clint_msip = registradores[rs2] & 0x1;
-					fprintf(output, "0x%08x:sb %s,0x%03x(%s) clint_msip=0x%02x\n",
-							pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], clint_msip);
+				default:
+					// Endereço dentro do intervalo CLINT sem ação definida
+					break;
 				}
-				else if (endereco == 0x0200BFF8)
-				{ // MTIME low
-					clint_mtime = (clint_mtime & 0xFFFFFFFF00000000) | (registradores[rs2] & 0xFF);
-					fprintf(output, "0x%08x:sb %s,0x%03x(%s) clint_mtime_low+=0x%02x\n",
-							pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], registradores[rs2] & 0xFF);
-				}
-				else if (endereco == 0x0200BFFC)
-				{ // MTIME high
-					clint_mtime = (clint_mtime & 0x00000000FFFFFFFF) | ((uint64_t)(registradores[rs2] & 0xFF) << 32);
-					fprintf(output, "0x%08x:sb %s,0x%03x(%s) clint_mtime_high+=0x%02x\n",
-							pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], registradores[rs2] & 0xFF);
-				}
-				else if (endereco == 0x02004000)
-				{ // MTIMECMP low
-					clint_mtimecmp = (clint_mtimecmp & 0xFFFFFFFF00000000) | (registradores[rs2] & 0xFF);
-					fprintf(output, "0x%08x:sb %s,0x%03x(%s) clint_mtimecmp_low=0x%02x\n",
-							pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], registradores[rs2] & 0xFF);
-				}
-				else if (endereco == 0x02004004)
-				{ // MTIMECMP high
-					clint_mtimecmp = (clint_mtimecmp & 0x00000000FFFFFFFF) | ((uint64_t)(registradores[rs2] & 0xFF) << 32);
-					fprintf(output, "0x%08x:sb %s,0x%03x(%s) clint_mtimecmp_high=0x%02x\n",
-							pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], registradores[rs2] & 0xFF);
-				}
-				// ACESSO À UART
-				else if (endereco == 0x10000000)
+
+				fprintf(output,
+						"0x%08x:sw     %s,0x%03x(%s) mem[0x%08x]=0x%08x\n",
+						pc,                        // Endereço da instrução
+						regNomes[rs2],             // Nome do registrador rs2
+						imm_s & 0xFFF,             //imediato do tipo s
+						regNomes[rs1],             // Nome do registrador rs1
+						addr,                      //endereço da memoria acessada
+						valor_lido);
+
+				break;
+			}
+
+			// Tratamento da UART para stores com funct3 = 0b000 e endereço na faixa UART
+			if (funct3 == 0b000 && addr >= 0x10000000 && addr <= 0x10000005)
+			{
+				uint32_t uart_offset = addr - 0x10000000;
+				registradoresUART[uart_offset] = valor_lido;
+
+				// Se for o registrador de transmissão (offset 0), envia caractere para o terminal
+				if (uart_offset == 0)
 				{
-					const uint8_t dado = registradores[rs2] & 0xFF;
-					fputc(dado, output2);
+					fputc(valor_lido, output2);
 					fflush(output2);
-					registradoresUART[0] = dado;
-					fprintf(output, "0x%08x:sb %s,0x%03x(%s) uart[0]=0x%02x\n",
-							pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], dado);
+
+					// Marca interrupção PLIC pendente para UART (bit 10)
+					if (!(plic_pending & (1 << 10)))
+						plic_pending |= (1 << 10);
 				}
-				// ACESSO NORMAL À RAM
-				else 
+
+				fprintf(output,
+						"0x%08x:sb     %s,0x%03x(%s) mem[0x%08x]=0x%02x\n",
+						pc,                      // Endereço da instrução
+						regNomes[rs2],           // Nome do registrador rs2
+						imm_s & 0xFFF,           //imediato do tipo s
+						regNomes[rs1],           // Nome do registrador rs1
+						addr,                    //endereço da memoria acessada
+						valor_lido);
+
+				break;
+			}
+
+			// PLIC (Platform-Level Interrupt Controller)
+			if (addr == 0x0C000028) // PRIORITY (prioridade de uma interrupção)
+			{
+				plic_priority = valor_lido;
+			}
+			else if (addr == 0x0C002000) // ENABLE (quais interrupções estão habilitadas para gerar exceções)
+			{
+				plic_enable = valor_lido;
+			}
+			else if (addr == 0x0C200004) // CLAIM (usado pelo processador para "reclamar" a interrupção atual)
+			{
+				if (valor_lido == 10)
 				{
-					if (endereco < offset || endereco >= offset + 32 * 1024)
-					{
-						prepMstatus(&registradoresCSRs[0]);
-						registrarExcecao(7, pc, endereco, registradoresCSRs, output, &pc);
-						continue;
-					}
-					const uint8_t resultado = registradores[rs2] & 0xFF;
-					mem[endereco - offset] = resultado;
-					fprintf(output, "0x%08x:sb %s,0x%03x(%s) mem[0x%08x]=0x%02x\n",
-							pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], endereco, resultado);
+					plic_pending &= ~(1 << 10); // Limpa o bit correspondente à interrupção 10
 				}
 			}
 
-			// sh ( Armazena 2 bytes da parte menos significativa de rs2 na memória [rs1 + offset])
-			else if (funct3 == 0b001)
+			// Independente de qual registrador PLIC foi acessado, imprime o log da operação
+			if (addr == 0x0C000028 || addr == 0x0C002000 || addr == 0x0C200004)
 			{
-				// Calcula o deslocamento de 12 bits com sinal
-
+				fprintf(output,
+						"0x%08x:sw     %s,0x%03x(%s) mem[0x%08x]=0x%08x\n",
+						pc,                       // Endereço da instrução
+						regNomes[rs2],            // Nome do registrador rs2
+						imm_s & 0xFFF,            //imediato do tipo s
+						regNomes[rs1],            // Nome do registrador rs1
+						addr,                      //endereço da memoria acessada
+						valor_lido);
+				break;
+			}
+			// sb (Store Byte)
+			if (funct3 == 0b000)
+			{
 				const uint32_t endereco = registradores[rs1] + imm_s;
 
-				// Tratamento da exceção 7 — Store Access Fault. Quando a instrução de escrita tenta acessar um endereço inválido na memória
-				if (endereco < offset || endereco + 1 >= offset + 32 * 1024)
+				// Acesso normal à RAM
+				if (endereco < offset || endereco >= offset + 32 * 1024)
 				{
-					// preparando mstatus para a excessão
 					prepMstatus(&registradoresCSRs[0]);
 					registrarExcecao(7, pc, endereco, registradoresCSRs, output, &pc);
 					continue;
 				}
-				const uint16_t resultado = (uint16_t)(registradores[rs2] & 0xFFFF); // parte menos significativa de rs2
+				const uint8_t resultado = registradores[rs2] & 0xFF;
+				mem[endereco - offset] = resultado;
+				fprintf(output, "0x%08x:sb %s,0x%03x(%s) mem[0x%08x]=0x%02x\n",
+						pc,                          // Endereço da instrução
+						regNomes[rs2],               // Nome do registrador rs2
+						imm_s & 0xFFF,               //imediato do tipo s
+						regNomes[rs1],               // Nome do registrador rs1
+						endereco, 
+						resultado);
+			}
 
+			// sh (Store Halfword)
+			else if (funct3 == 0b001)
+			{
+				const uint32_t endereco = registradores[rs1] + imm_s;
+
+				if (endereco < offset || endereco + 1 >= offset + 32 * 1024)
+				{
+					prepMstatus(&registradoresCSRs[0]);
+					registrarExcecao(7, pc, endereco, registradoresCSRs, output, &pc);
+					continue;
+				}
+
+				const uint16_t resultado = registradores[rs2] & 0xFFFF;
 				mem[endereco - offset] = resultado & 0xFF;
 				mem[endereco + 1 - offset] = (resultado >> 8) & 0xFF;
 
 				fprintf(output, "0x%08x:sh %s,0x%03x(%s) mem[0x%08x]=0x%04x\n",
-						pc,			   // Endereço da instrução
-						regNomes[rs2], // Nome do registrador rs2
-						imm_s & 0xFFF, // imedaito do tipo s
-						regNomes[rs1], // Nome do registrador rs1
-						endereco,	   // endereço
-						resultado & 0xFFFF);
+						pc,                      // Endereço da instrução
+						regNomes[rs2],           // Nome do registrador rs2
+						imm_s & 0xFFF,           //imediato do tipo s
+						regNomes[rs1],           // Nome do registrador rs1
+						endereco, 
+						resultado);
 			}
 
-			// sw (Armazena 4 bytes da parte menos significativa de rs2 na memória [rs1 + offset])
+			// sw (Store Word)
 			else if (funct3 == 0b010)
 			{
 				const uint32_t endereco = registradores[rs1] + imm_s;
 
-				// ACESSO AO CLINT (sw pode precisar acessar registradores de 32 bits)
-				if (endereco == 0x02000000)
-				{ // MSIP
-					clint_msip = registradores[rs2] & 0x1;
-					fprintf(output, "0x%08x:sw %s,0x%03x(%s) mem[0x%08x]=0x%08x\n",
-							pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], endereco, registradores[rs2]);
-				}
-				else if (endereco == 0x0200BFF8)
-				{ // MTIME low (32 bits)
-					clint_mtime = (clint_mtime & 0xFFFFFFFF00000000) | registradores[rs2];
-					fprintf(output, "0x%08x:sw %s,0x%03x(%s) mem[0x%08x]=0x%08x\n",
-							pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], endereco, registradores[rs2]);
-				}
-				else if (endereco == 0x0200BFFC)
-				{ // MTIME high (32 bits)
-					clint_mtime = (clint_mtime & 0x00000000FFFFFFFF) | ((uint64_t)registradores[rs2] << 32);
-					fprintf(output, "0x%08x:sw %s,0x%03x(%s) mem[0x%08x]=0x%08x\n",
-							pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], endereco, registradores[rs2]);
-				}
-				else if (endereco == 0x02004000)
-				{ // MTIMECMP low (32 bits)
-					clint_mtimecmp = (clint_mtimecmp & 0xFFFFFFFF00000000) | registradores[rs2];
-					fprintf(output, "0x%08x:sw %s,0x%03x(%s) mem[0x%08x]=0x%08x\n",
-							pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], endereco, registradores[rs2]);
-				}
-				else if (endereco == 0x02004004)
-				{ // MTIMECMP high (32 bits)
-					clint_mtimecmp = (clint_mtimecmp & 0x00000000FFFFFFFF) | ((uint64_t)registradores[rs2] << 32);
-					fprintf(output, "0x%08x:sw %s,0x%03x(%s) mem[0x%08x]=0x%08x\n",
-							pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], endereco, registradores[rs2]);
-				}
-				// ACESSO NORMAL À RAM
-				else
+				if (endereco < offset || endereco + 3 >= offset + 32 * 1024)
 				{
-					if (endereco < offset || endereco + 3 >= offset + 32 * 1024)
-					{
-						prepMstatus(&registradoresCSRs[0]);
-						registrarExcecao(7, pc, endereco, registradoresCSRs, output, &pc);
-						continue;
-					}
-
-					const uint32_t resultado = registradores[rs2];
-					mem[endereco - offset] = resultado & 0xFF;
-					mem[endereco + 1 - offset] = (resultado >> 8) & 0xFF;
-					mem[endereco + 2 - offset] = (resultado >> 16) & 0xFF;
-					mem[endereco + 3 - offset] = (resultado >> 24) & 0xFF;
-
-					fprintf(output, "0x%08x:sw %s,0x%03x(%s) mem[0x%08x]=0x%08x\n",
-							pc, regNomes[rs2], imm_s & 0xFFF, regNomes[rs1], endereco, resultado);
+					prepMstatus(&registradoresCSRs[0]);
+					registrarExcecao(7, pc, endereco, registradoresCSRs, output, &pc);
+					continue;
 				}
+
+				const uint32_t resultado = registradores[rs2];
+				mem[endereco - offset] = resultado & 0xFF;
+				mem[endereco + 1 - offset] = (resultado >> 8) & 0xFF;
+				mem[endereco + 2 - offset] = (resultado >> 16) & 0xFF;
+				mem[endereco + 3 - offset] = (resultado >> 24) & 0xFF;
+
+				fprintf(output, "0x%08x:sw %s,0x%03x(%s) mem[0x%08x]=0x%08x\n",
+						pc,                    // Endereço da instrução
+						regNomes[rs2],         // Nome do registrador rs2
+						imm_s & 0xFFF,         //imediato do tipo s
+						regNomes[rs1],         // Nome do registrador rs2
+						endereco, 
+						resultado);
 			}
-			// Tratamento da exceção 2 — Illegal Instruction
-			else
-			{
-				prepMstatus(&registradoresCSRs[0]);
-				registrarExcecao(2, pc, instrucao, registradoresCSRs, output, &pc);
-				continue;
-			}
-		
-		
 			break;
-	}
+		}
 		// tipo Branch
 		case 0b1100011:
 			// beq (Compara os valores em rs1 e rs2. Se forem iguais, salta para PC + offset)
@@ -1376,7 +1431,7 @@ int main(int argc, char *argv[])
 			}
 
 			// blt (Compara rs1 e rs2 com sinal. Se rs1 < rs2, salta para PC + offset)
-			else if (funct3 == 0b100) 
+			else if (funct3 == 0b100)
 			{
 				const int32_t rs1_sinal = (int32_t)registradores[rs1];
 				const int32_t rs2_sinal = (int32_t)registradores[rs2];
@@ -1384,13 +1439,13 @@ int main(int argc, char *argv[])
 				const int condicao = rs1_sinal < rs2_sinal;
 
 				fprintf(output, "0x%08x:blt %s,%s,0x%03x (0x%08x<0x%08x)=%d->pc=0x%08x\n",
-						pc,                   // Endereço da instrução
-						regNomes[rs1],        // Nome do registrador rs1
-						regNomes[rs2],        // Nome do registrador rs2
-						imm_b & 0xFFF,        // imediato do tipo b
-						registradores[rs1],   // valor de rs1
-						registradores[rs2],   // valor de rs2
-						condicao,                        
+						pc,					// Endereço da instrução
+						regNomes[rs1],		// Nome do registrador rs1
+						regNomes[rs2],		// Nome do registrador rs2
+						imm_b & 0xFFF,		// imediato do tipo b
+						registradores[rs1], // valor de rs1
+						registradores[rs2], // valor de rs2
+						condicao,
 						condicao ? pc + imm_b : pc + 4);
 
 				if (condicao)
@@ -1399,7 +1454,6 @@ int main(int argc, char *argv[])
 					continue; // IMPORTANTE: pula pc += 4
 				}
 			}
-
 
 			// bge (Compara rs1 e rs2 com sinal. Se rs1 >= rs2, salta para PC + offset)
 			else if (funct3 == 0b101)
@@ -1866,78 +1920,74 @@ int main(int argc, char *argv[])
 			registrarExcecao(2, pc, instrucao, registradoresCSRs, output, &pc); // código 2 = Illegal Instruction
 			continue;															// Isso será tratado pelo handler
 		}
-			//pc += 4;
 
-			// Incremento do tempo do CLINT (mtime)
-			clint_mtime++;
+		// Incremento do tempo do CLINT (mtime)
+		clint_mtime++;
 
-			// VERIFICAÇÃO DA INTERRUPÇÃO POR TIMER
-			if ((registradoresCSRs[1] & (1 << 7)) && // mie: habilita interrupção de timer
-				(registradoresCSRs[0] & (1 << 3)) && // mstatus: interrupções globais habilitadas
-				(clint_mtime >= clint_mtimecmp))	 // mtime atingiu mtimecmp
-			{
-				// Prepara os CSRs para a interrupção
-				registradoresCSRs[4] = 0x80000007; // mcause (bit 31 = 1 indica interrupção, código 7 = timer)
-				registradoresCSRs[3] = pc + 4;	   // mepc = próxima instrução
-				registradoresCSRs[5] = 0x00000000; // mtval = zero em interrupções
+		// VERIFICAÇÃO DA INTERRUPÇÃO POR TIMER
+		if ((registradoresCSRs[1] & (1 << 7)) && // mie: habilita interrupção de timer
+			(registradoresCSRs[0] & (1 << 3)) && // mstatus: interrupções globais habilitadas
+			(clint_mtime >= clint_mtimecmp))	 // mtime atingiu mtimecmp
+		{
+			// Prepara os CSRs para a interrupção
+			registradoresCSRs[4] = 0x80000007; // mcause (bit 31 = 1 indica interrupção, código 7 = timer)
+			registradoresCSRs[3] = pc + 4;	   // mepc = próxima instrução
+			registradoresCSRs[5] = 0x00000000; // mtval = zero em interrupções
 
-				prepMstatus(&registradoresCSRs[0]);
+			prepMstatus(&registradoresCSRs[0]);
 
-				fprintf(output, ">interrupt:timer                   cause=0x%08x,epc=0x%08x,tval=0x%08x\n",
-						registradoresCSRs[4], registradoresCSRs[3], registradoresCSRs[5]);
+			fprintf(output, ">interrupt:timer                   cause=0x%08x,epc=0x%08x,tval=0x%08x\n",
+					registradoresCSRs[4], registradoresCSRs[3], registradoresCSRs[5]);
 
-				// Redireciona o PC para mtvec
-				pc = (registradoresCSRs[2] & ~0x3) + 4 * (registradoresCSRs[4] & 0x7FFFFFFF);
+			// Redireciona o PC para mtvec
+			pc = (registradoresCSRs[2] & ~0x3) + 4 * (registradoresCSRs[4] & 0x7FFFFFFF);
 
-				continue;
-			}
-
-			// VERIFICAÇÃO DE INTERRUPÇÃO DE SOFTWARE
-			if ((registradoresCSRs[1] & 0x8) && // mie: software interrupt enable (bit 3)
-				(registradoresCSRs[0] & 0x8) && // mstatus: global interrupt enable (bit 3)
-				(clint_msip & 0x1))				// msip: interrupção de software solicitada
-			{
-				registradoresCSRs[4] = 0x80000003; // mcause: software interrupt
-				registradoresCSRs[3] = pc + 4;	   // mepc: proxima instrução 
-				registradoresCSRs[5] = 0;		   // mtval: valor adicional (0 para interrupções)
-
-				prepMstatus(&registradoresCSRs[0]);
-
-				fprintf(output, ">interrupt:software                cause=0x%08x,epc=0x%08x,tval=0x%08x\n",
-						registradoresCSRs[4], registradoresCSRs[3], registradoresCSRs[5]);
-
-				 // IMPORTANTE: Limpar o MSIP para evitar loop infinito
-                clint_msip = 0;
-
-				// Redireciona o PC para mtvec
-				pc = (registradoresCSRs[2] & ~0x3) + 4 * (registradoresCSRs[4] & 0x7FFFFFFF);
-				continue;
-			}
-
-			// VERIFICAÇÃO DE INTERRUPÇÃO EXTERNA (PLIC – UART)
-			if ((registradoresCSRs[1] & (1 << 11)) &&    // mie: interrupção externa habilitada (bit 11)
-				(registradoresCSRs[0] & (1 << 3)) &&     // mstatus: global interrupt enable
-				(plic_enable & (1 << 1)) &&              // PLIC: UART habilitada
-				(plic_pending & (1 << 1)))               // PLIC: UART sinalizou interrupção
-			{
-				registradoresCSRs[4] = 0x8000000B; // mcause: 11 = External Interrupt (bit 31 = 1)
-				registradoresCSRs[3] = pc + 4;     // mepc: próxima instrução
-				registradoresCSRs[5] = 0;          // mtval: 0 para interrupções
-
-				prepMstatus(&registradoresCSRs[0]);
-
-				fprintf(output, ">interrupt:external                cause=0x%08x,epc=0x%08x,tval=0x%08x\n",
-						registradoresCSRs[4], registradoresCSRs[3], registradoresCSRs[5]);
-
-				// Limpa o pending (interrupção foi "reconhecida")
-				plic_pending &= ~(1 << 1);
-				
-				// Redireciona o PC para mtvec como nas outras interrupções
-				pc = (registradoresCSRs[2] & ~0x3) + 4 * (registradoresCSRs[4] & 0x7FFFFFFF);
-				continue;
-			}
-            
-           pc += 4;
+			continue;
 		}
-		return 0;
+
+		// VERIFICAÇÃO DE INTERRUPÇÃO DE SOFTWARE
+		if ((registradoresCSRs[1] & 0x8) && // mie: software interrupt enable (bit 3)
+			(registradoresCSRs[0] & 0x8) && // mstatus: global interrupt enable (bit 3)
+			(clint_msip & 0x1))				// msip: interrupção de software solicitada
+		{
+			registradoresCSRs[4] = 0x80000003; // mcause: software interrupt
+			registradoresCSRs[3] = pc + 4;	   // mepc: proxima instrução
+			registradoresCSRs[5] = 0;		   // mtval: valor adicional (0 para interrupções)
+
+			prepMstatus(&registradoresCSRs[0]);
+
+			fprintf(output, ">interrupt:software                cause=0x%08x,epc=0x%08x,tval=0x%08x\n",
+					registradoresCSRs[4], registradoresCSRs[3], registradoresCSRs[5]);
+
+			// IMPORTANTE: Limpar o MSIP para evitar loop infinito
+			clint_msip = 0;
+
+			// Redireciona o PC para mtvec
+			pc = (registradoresCSRs[2] & ~0x3) + 4 * (registradoresCSRs[4] & 0x7FFFFFFF);
+			continue;
+		}
+
+		// VERIFICAÇÃO DE INTERRUPÇÃO EXTERNA (PLIC – UART)
+		if ((registradoresCSRs[1] & (1 << 11)) && // mie: external interrupt enable
+			(registradoresCSRs[0] & (1 << 3)) &&  // mstatus: global interrupt enable
+			(plic_enable & (1 << 10)) &&		  // UART enable no PLIC
+			(plic_pending & (1 << 10)))			  // UART sinalizou interrupção
+		{
+			registradoresCSRs[4] = 0x8000000B; // mcause: 11 = External Interrupt (bit 31 = 1)
+			registradoresCSRs[3] = pc + 4;	   // mepc: próxima instrução
+			registradoresCSRs[5] = 0;		   // mtval: 0 para interrupções
+
+			prepMstatus(&registradoresCSRs[0]);
+
+			fprintf(output, ">interrupt:external                cause=0x%08x,epc=0x%08x,tval=0x%08x\n",
+					registradoresCSRs[4], registradoresCSRs[3], registradoresCSRs[5]);
+
+			// Redireciona o PC para mtvec como nas outras interrupções
+			pc = (registradoresCSRs[2] & ~0x3) + 4 * (registradoresCSRs[4] & 0x7FFFFFFF);
+			continue;
+		}
+
+		pc += 4;
 	}
+	return 0;
+}
