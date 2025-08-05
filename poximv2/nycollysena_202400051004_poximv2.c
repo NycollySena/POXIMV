@@ -1783,11 +1783,12 @@ int main(int argc, char *argv[])
 					registradores[rd] = valor_antigo;
 				}
 
-				fprintf(output, "0x%08x:csrrwi %s,%s,%u     %s=%s=0x%08x,%s=zimm=0x%02x -> 0x%08x\n",
+				fprintf(output,"0x%08x:csrrwi %s,%s,%u     %s=%s=0x%08x,%s=u5=0x%07x\n",
 						pc,
 						regNomes[rd], regNomesCSRs[idx], imm_val,
 						regNomes[rd], regNomesCSRs[idx], valor_antigo,
-						regNomesCSRs[idx], imm_val, registradoresCSRs[idx]);
+						regNomesCSRs[idx], imm_val);
+
 			}
 
 			// csrrsi (Faz OR entre CSR e valor imediato, salvando valor antigo em rd; usada para ativar bits)
@@ -1822,11 +1823,12 @@ int main(int argc, char *argv[])
 					}
 				}
 
-				fprintf(output, "0x%08x:csrrsi %s,%s,%u     %s=%s=0x%08x,%s|=0x%02x=0x%08x\n",
+				fprintf(output, "0x%08x:csrrsi %s,%s,%u      %s=%s=0x%08x,%s|=u5=0x%08x|0x%08x=0x%08x\n",
 						pc,
 						regNomes[rd], regNomesCSRs[idx], imm_val,
 						regNomes[rd], regNomesCSRs[idx], valor_antigo,
-						regNomesCSRs[idx], imm_val, registradoresCSRs[idx]);
+						regNomesCSRs[idx], valor_antigo, imm_val, registradoresCSRs[idx]);
+
 			}
 
 			// csrrci (Desativa bits do CSR com imediato e salva valor antigo em rd; usada para controle do sistema)
@@ -1861,11 +1863,12 @@ int main(int argc, char *argv[])
 					}
 				}
 
-				fprintf(output, "0x%08x:csrrci %s,%s,%u     %s=%s=0x%08x,%s&=~0x%02x=0x%08x\n",
+				fprintf(output, "0x%08x:csrrci %s,%s,%u      %s=%s=0x%08x,%s&~=u5=0x%08x&~0x%08x=0x%08x\n",
 						pc,
 						regNomes[rd], regNomesCSRs[idx], imm_val,
 						regNomes[rd], regNomesCSRs[idx], valor_antigo,
-						regNomesCSRs[idx], imm_val, registradoresCSRs[idx]);
+						regNomesCSRs[idx], valor_antigo, imm_val, registradoresCSRs[idx]);
+
 			}
 
 			// ecall (Solicita serviço ao sistema; gera uma exceção para tratar chamada de ambiente)
@@ -1900,7 +1903,7 @@ int main(int argc, char *argv[])
 
 				registradoresCSRs[idx_mstatus] = mstatus;
 
-				fprintf(output, "0x%08x:mret       pc=mepc=0x%08x\n", pc, mepc);
+				fprintf(output, "0x%08x:mret       pc=0x%08x\n", pc, mepc);
 
 				pc = mepc;
 				continue;
@@ -1933,7 +1936,7 @@ int main(int argc, char *argv[])
 
 			prepMstatus(&registradoresCSRs[0]);
 
-			fprintf(output, ">interrupt:timer                   cause=0x%08x,epc=0x%08x,tval=0x%08x\n",
+			fprintf(output, ">interrupt:timer               cause=0x%08x,epc=0x%08x,tval=0x%08x\n",
 					registradoresCSRs[4], registradoresCSRs[3], registradoresCSRs[5]);
 
 			// Redireciona o PC para mtvec
@@ -1953,7 +1956,7 @@ int main(int argc, char *argv[])
 
 			prepMstatus(&registradoresCSRs[0]);
 
-			fprintf(output, ">interrupt:software                cause=0x%08x,epc=0x%08x,tval=0x%08x\n",
+			fprintf(output, ">interrupt:software            cause=0x%08x,epc=0x%08x,tval=0x%08x\n",
 					registradoresCSRs[4], registradoresCSRs[3], registradoresCSRs[5]);
 
 			// IMPORTANTE: Limpar o MSIP para evitar loop infinito
@@ -1976,7 +1979,7 @@ int main(int argc, char *argv[])
 
 			prepMstatus(&registradoresCSRs[0]);
 
-			fprintf(output, ">interrupt:external                cause=0x%08x,epc=0x%08x,tval=0x%08x\n",
+			fprintf(output, ">interrupt:external            cause=0x%08x,epc=0x%08x,tval=0x%08x\n",
 					registradoresCSRs[4], registradoresCSRs[3], registradoresCSRs[5]);
 
 			// Redireciona o PC para mtvec como nas outras interrupções
